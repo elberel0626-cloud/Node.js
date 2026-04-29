@@ -1,0 +1,11 @@
+{
+  "name": "erp-ar-skeleton",
+  "version": "1.0.0",
+  "description": "Modular ERP skeleton starting with AR module",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  }
+}
