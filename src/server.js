@@ -1,3 +1,14 @@
+if (req.method === 'GET' && url.pathname === '/') {
+  return json(res, 200, {
+    message: 'ERP AR system is running 🚀',
+    status: 'OK',
+    version: '1.0'
+  });
+}
+
+if (req.method === 'GET' && url.pathname === '/health') {
+  return json(res, 200, { status: 'healthy' });
+}
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 
