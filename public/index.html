@@ -1,16 +1,7 @@
-<!doctype html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>ERP</title><link rel='stylesheet' href='/styles.css'></head><body>
-<main id='login-screen' class='centered'><form id='login-form' class='card'><h1>ERP Login</h1><input id='username' placeholder='Username' required><input id='password' type='password' placeholder='Password' required><button>Sign In</button><p id='login-error' class='error'></p></form></main>
-<div id='app' class='hidden'><aside class='sidebar'><h2>Modules</h2><nav id='module-nav'></nav></aside><section class='content'>
-<header class='topbar'><h1 id='view-title'>Dashboard</h1><div class='actions'><button id='new-invoice'>New Invoice</button><button id='new-payment'>New Payment</button><button id='new-customer'>New Customer</button></div></header>
-<section id='dashboard' class='view'><div class='metric'><h3>Select AR module to start workflow</h3></div></section>
-<section id='ar-home' class='view hidden'><div id='ar-groups' class='cards'></div></section>
-<section id='ar-data' class='view hidden'>
-<h2>Invoices and Memos</h2><table><thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Date</th><th>Balance</th><th>Status</th></tr></thead><tbody id='invoice-table'></tbody></table>
-<h2>Payments and Applications</h2><table><thead><tr><th>Payment Ref#</th><th>Customer</th><th>Amount</th><th>Date</th><th>Status</th></tr></thead><tbody id='payment-table'></tbody></table>
-<h2>Customers</h2><table><thead><tr><th>#</th><th>Name</th><th>Terms</th><th>Status</th><th>Credit Limit</th></tr></thead><tbody id='customer-table'></tbody></table>
-<h2>Credit Terms</h2><table><thead><tr><th>Code</th><th>Description</th><th>Days</th></tr></thead><tbody id='term-table'></tbody></table>
-<h2>AR Aging Report</h2><table><thead><tr><th>Invoice</th><th>Customer</th><th>Balance</th><th>Bucket</th></tr></thead><tbody id='aging-table'></tbody></table>
-<h2>AR Balance by Customer</h2><table><thead><tr><th>Customer</th><th>Balance</th></tr></thead><tbody id='bal-cust-table'></tbody></table>
-<h2>GL Accounts</h2><table><thead><tr><th>Code</th><th>Name</th><th>Category</th><th>Balance</th></tr></thead><tbody id='gl-table'></tbody></table>
-</section>
-</section></div><script type='module' src='/app.js'></script></body></html>
+<!doctype html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>ERP AR</title><link rel='stylesheet' href='/styles.css'></head><body>
+<main id='login-screen' class='centered'><form id='login-form' class='card'><h1>ERP Login</h1><input id='username' required placeholder='Username'><input id='password' type='password' required placeholder='Password'><button>Sign In</button><p id='login-error' class='error'></p></form></main>
+<div id='app' class='hidden'><aside class='sidebar'><h2>AR Module</h2><nav>
+<a href='/ar'>Dashboard</a><a href='/ar/invoices'>Invoices</a><a href='/ar/invoices/new'>New Invoice</a><a href='/ar/payments'>Payments</a><a href='/ar/payments/new'>New Payment</a><a href='/ar/customers'>Customers</a><a href='/ar/customers/new'>New Customer</a><a href='/ar/reports/aging'>AR Aging</a><a href='/ar/reports/balance'>Balance by Customer</a><a href='/ar/reports/transactions'>Transactions</a>
+</nav></aside>
+<section class='content'><h1 id='title'></h1><div id='view'></div></section></div>
+<script type='module' src='/app.js'></script></body></html>
