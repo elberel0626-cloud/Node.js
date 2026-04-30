@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ERP UI Skeleton</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main id="login-screen" class="centered">
+    <form id="login-form" class="card">
+      <h1>ERP Login</h1>
+      <input type="text" id="username" placeholder="Username" required />
+      <input type="password" id="password" placeholder="Password" required />
+      <button type="submit">Sign In</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </main>
+
+  <div id="app" class="hidden">
+    <aside class="sidebar">
+      <h2>ERP</h2>
+      <nav>
+        <button data-view="dashboard">Dashboard</button>
+        <button data-view="ar">Receivables (AR)</button>
+        <button data-view="gl">General Ledger</button>
+        <button data-view="customize">Customization</button>
+      </nav>
+    </aside>
+
+    <section class="content">
+      <header class="topbar">
+        <h1 id="view-title">Dashboard</h1>
+        <div class="actions">
+          <button id="new-invoice">New Invoice</button>
+          <button id="new-payment">New Payment</button>
+          <button id="new-customer">New Customer</button>
+        </div>
+      </header>
+
+      <section id="dashboard" class="view">
+        <div class="cards" id="metric-cards"></div>
+      </section>
+
+      <section id="ar" class="view hidden">
+        <h2>Invoices and Memos</h2>
+        <table>
+          <thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Date</th><th>Status</th></tr></thead>
+          <tbody id="invoice-table"></tbody>
+        </table>
+      </section>
+
+      <section id="gl" class="view hidden">
+        <h2>GL Accounts</h2>
+        <table>
+          <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Subledger</th></tr></thead>
+          <tbody id="gl-table"></tbody>
+        </table>
+      </section>
+
+      <section id="customize" class="view hidden">
+        <h2>Admin Customization</h2>
+        <form id="custom-form">
+          <input id="target" placeholder="target (forms/features)" required />
+          <input id="key" placeholder="key" required />
+          <input id="value" placeholder="value" required />
+          <button type="submit">Save Configuration</button>
+        </form>
+        <pre id="custom-output"></pre>
+      </section>
+    </section>
+  </div>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
