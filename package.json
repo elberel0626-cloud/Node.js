@@ -1,8 +1,11 @@
 {
-  "name": "nodejs-app",
-  "version": "1.0.0",
-  "main": "index.js",
+  "name": "erp-ar-skeleton",
+  "version": "0.2.0",
+  "description": "ERP skeleton with General Ledger core and AR module",
+  "main": "src/server.js",
+  "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/data/seed.js"
   }
 }
