@@ -16,7 +16,10 @@ export const glAccounts = [
   { code: '1000', name: 'Cash', normal: 'Debit', balance: 100000 },
   { code: '1100', name: 'Accounts Receivable', normal: 'Debit', balance: 0 },
   { code: '4000', name: 'Revenue', normal: 'Credit', balance: 0 },
-  { code: '4050', name: 'Returns and Allowances', normal: 'Debit', balance: 0 }
+  { code: '4050', name: 'Returns and Allowances', normal: 'Debit', balance: 0 },
+  { code: '2100', name: 'Tax Payable', normal: 'Credit', balance: 0 },
+  { code: '5000', name: 'Cost of Goods Sold', normal: 'Debit', balance: 0 },
+  { code: '1200', name: 'Inventory', normal: 'Debit', balance: 50000 }
 ];
 
 export const arDocuments = [
@@ -34,3 +37,14 @@ export const arDocuments = [
 ];
 
 export const journalEntries = [];
+
+
+export const itemMaster = [
+  { code:'ITEM-1001', name:'Industrial Printer Ink Black', type:'Inventory', uom:'Each', salesPrice:120, cost:80, taxable:true, status:'Active' },
+  { code:'ITEM-1002', name:'Industrial Printer Ink Cyan', type:'Inventory', uom:'Each', salesPrice:120, cost:80, taxable:true, status:'Active' },
+  { code:'ITEM-1003', name:'LED Panel 4ft', type:'Inventory', uom:'Each', salesPrice:45, cost:30, taxable:true, status:'Active' },
+  { code:'ITEM-1004', name:'Mounting Bracket Kit', type:'Inventory', uom:'Each', salesPrice:18, cost:10, taxable:true, status:'Active' },
+  { code:'ITEM-1005', name:'Maintenance Service Hour', type:'Service', uom:'Hour', salesPrice:95, cost:40, taxable:false, status:'Active' },
+  { code:'ITEM-1006', name:'Shipping Fee', type:'Non-Inventory', uom:'Each', salesPrice:25, cost:25, taxable:false, status:'Active' },
+  { code:'ITEM-1007', name:'Printer Head Replacement', type:'Inventory', uom:'Each', salesPrice:650, cost:420, taxable:true, status:'Active' }
+];

@@ -2,7 +2,7 @@ import http from 'node:http';
 import { parse } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { arDocuments, creditTerms, customers, glAccounts, journalEntries } from './data/seed.js';
+import { arDocuments, creditTerms, customers, glAccounts, itemMaster, journalEntries } from './data/seed.js';
 
 const publicDir = path.resolve('public');
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
@@ -11,7 +11,11 @@ const acct=(code)=>glAccounts.find(a=>a.code===code); const bump=(code,side,amt)
 const nextId=(prefix)=>`${prefix}-${String(arDocuments.filter(d=>d.id.startsWith(prefix+'-')).length+1001).padStart(4,'0')}`;
 function postJE(doc,reverse=false){
   const amt=Number(doc.amount||0); let lines=[];
-  if(doc.type==='Invoice') lines=[{a:'1100',dr:amt,cr:0},{a:'4000',dr:0,cr:amt}];
+  if(doc.type==='Invoice'){
+    const tax=Number(doc.taxTotal||0); const net=amt-tax;
+    lines=[{a:'1100',dr:amt,cr:0},{a:'4000',dr:0,cr:net}]; if(tax>0) lines.push({a:'2100',dr:0,cr:tax});
+    if(doc.cogsTotal) { lines.push({a:'5000',dr:Number(doc.cogsTotal),cr:0},{a:'1200',dr:0,cr:Number(doc.cogsTotal)}); }
+  }
   if(doc.type==='Debit Memo') lines=[{a:'1100',dr:amt,cr:0},{a:'4050',dr:0,cr:amt}];
   if(doc.type==='Credit Memo') lines=[{a:'1100',dr:0,cr:amt},{a:'4050',dr:amt,cr:0}];
   if(doc.type==='Payment') lines=[{a:'1000',dr:amt,cr:0},{a:'1100',dr:0,cr:amt}];
@@ -26,10 +30,16 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); return b.username==='admin'&&b.password==='admin'?json(res,200,{ok:true}):json(res,401,{error:'Invalid'});}
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers);
  if(method==='GET'&&pathname==='/api/ar/credit-terms') return json(res,200,creditTerms);
+
+ if(method==='GET'&&pathname==='/api/inventory/items') return json(res,200,itemMaster);
+
  if(method==='GET'&&pathname==='/api/ar/documents'){ let data=[...arDocuments]; if(query.type)data=data.filter(d=>d.type===query.type); if(query.customerId)data=data.filter(d=>d.customerId===query.customerId); if(query.status)data=data.filter(d=>d.status===query.status); return json(res,200,data); }
  if(method==='GET'&&pathname.startsWith('/api/ar/documents/')){const id=pathname.split('/').pop(); const d=arDocuments.find(x=>x.id===id); return d?json(res,200,d):json(res,404,{error:'Not found'});}
  if(method==='POST'&&pathname==='/api/ar/documents'){ const b=await body(req); if(!b.customerId) return json(res,400,{error:'Customer required'}); const customer=customers.find(c=>c.id===b.customerId); if(!customer) return json(res,400,{error:'Invalid customer'}); if(customer.status==='On Hold') return json(res,400,{error:'Customer on credit hold'}); if(Number(b.amount)<=0) return json(res,400,{error:'Positive amount only'});
- const prefix=b.type==='Payment'?'PAY':b.type==='Credit Memo'?'CM':b.type==='Debit Memo'?'DM':'INV'; const doc={id:nextId(prefix),type:b.type||'Invoice',customerId:customer.id,customerName:customer.name,date:b.date||new Date().toISOString().slice(0,10),dueDate:b.dueDate,terms:b.terms||customer.terms,status:'Saved',posted:false,createdDate:new Date().toISOString().slice(0,10),amount:Number(b.amount),balance:Number(b.amount),lines:b.lines||[],applications:b.applications||[],method:b.method,checkNumber:b.checkNumber}; if(doc.type==='Payment'){ if(!doc.date) return json(res,400,{error:'Payment date required'}); if(!doc.method) return json(res,400,{error:'Payment method required'}); if(doc.method==='Check'&&!doc.checkNumber) return json(res,400,{error:'Check number required'}); const totalApplied=(doc.applications||[]).reduce((s,a)=>s+Number(a.amount||0),0); if(totalApplied!==doc.amount) return json(res,400,{error:'Total applied must equal payment amount'}); for(const app of doc.applications){const inv=arDocuments.find(d=>d.id===app.invoiceId&&d.type==='Invoice'); if(!inv) return json(res,400,{error:'Invalid invoice application'}); if(Number(app.amount)>inv.balance) return json(res,400,{error:'Applied payment cannot exceed invoice balance'});} }
+ const prefix=b.type==='Payment'?'PAY':b.type==='Credit Memo'?'CM':b.type==='Debit Memo'?'DM':'INV';
+ const lines=(b.lines||[]).map(l=>{ const item=itemMaster.find(i=>i.code===l.itemCode)||{}; const qty=Number(l.qty||0); const unitPrice=Number(l.unitPrice??item.salesPrice??0); const discountPct=Number(l.discountPct||0); const base=qty*unitPrice; const discount=base*(discountPct/100); const taxable=(l.taxable??item.taxable)?1:0; const tax=taxable?(base-discount)*0.1:0; const lineTotal=base-discount+tax; return {itemCode:l.itemCode,description:l.description||item.name||'',qty,unitPrice,discountPct,taxable:!!taxable,tax,lineTotal,cost:Number(item.cost||0)}; });
+ const subtotal=lines.reduce((s,l)=>s+l.qty*l.unitPrice,0); const discountTotal=lines.reduce((s,l)=>s+(l.qty*l.unitPrice*(l.discountPct/100)),0); const taxTotal=lines.reduce((s,l)=>s+l.tax,0); const grandTotal=lines.reduce((s,l)=>s+l.lineTotal,0); const cogsTotal=lines.filter(l=>(itemMaster.find(i=>i.code===l.itemCode)?.type||'')==='Inventory').reduce((s,l)=>s+(l.cost*l.qty),0);
+ const doc={id:nextId(prefix),type:b.type||'Invoice',customerId:customer.id,customerName:customer.name,date:b.date||new Date().toISOString().slice(0,10),dueDate:b.dueDate,terms:b.terms||customer.terms,status:'Saved',posted:false,createdDate:new Date().toISOString().slice(0,10),amount:Number(b.amount||grandTotal),balance:Number(b.amount||grandTotal),lines,subtotal,discountTotal,taxTotal,grandTotal,cogsTotal,applications:b.applications||[],method:b.method,checkNumber:b.checkNumber}; if(doc.type==='Payment'){ if(!doc.date) return json(res,400,{error:'Payment date required'}); if(!doc.method) return json(res,400,{error:'Payment method required'}); if(doc.method==='Check'&&!doc.checkNumber) return json(res,400,{error:'Check number required'}); const totalApplied=(doc.applications||[]).reduce((s,a)=>s+Number(a.amount||0),0); if(totalApplied!==doc.amount) return json(res,400,{error:'Total applied must equal payment amount'}); for(const app of doc.applications){const inv=arDocuments.find(d=>d.id===app.invoiceId&&d.type==='Invoice'); if(!inv) return json(res,400,{error:'Invalid invoice application'}); if(Number(app.amount)>inv.balance) return json(res,400,{error:'Applied payment cannot exceed invoice balance'});} }
  arDocuments.push(doc); return json(res,201,doc);} 
  if(method==='PUT'&&pathname.startsWith('/api/ar/documents/')){ const id=pathname.split('/').pop(); const d=arDocuments.find(x=>x.id===id); if(!d)return json(res,404,{error:'Not found'}); if(d.status==='Posted') return json(res,400,{error:'Cannot edit posted docs'}); Object.assign(d,await body(req)); return json(res,200,d);}
  if(method==='DELETE'&&pathname.startsWith('/api/ar/documents/')){ const id=pathname.split('/').pop(); const idx=arDocuments.findIndex(x=>x.id===id); if(idx<0)return json(res,404,{error:'Not found'}); if(arDocuments[idx].status==='Posted') return json(res,400,{error:'Cannot delete posted'}); arDocuments.splice(idx,1); return json(res,200,{ok:true}); }
