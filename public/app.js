@@ -21,8 +21,7 @@ async function router(){ if(location.pathname==='/') history.replaceState({},'',
    <table id='agingTbl'><tr><th>Customer Name</th><th>Current</th><th>1-30 days</th><th>31-60 days</th><th>61-90 days</th><th>90+</th></tr></table>`;
    const load=async()=>{const q=new URLSearchParams({customerId:$('#fCustomer').value,date:$('#fDate').value,bucket:$('#fBucket').value}); const data=await api('/api/ar/reports/aging?'+q.toString()); $('#agingTbl').innerHTML=`<tr><th>Customer Name</th><th>Current</th><th>1-30 days</th><th>31-60 days</th><th>61-90 days</th><th>90+</th></tr>${data.map(r=>`<tr><td>${r.customerName}</td><td>${r.current}</td><td>${r.b1_30}</td><td>${r.b31_60}</td><td>${r.b61_90}</td><td>${r.b90p}</td></tr>`).join('')}`; window.__agingData=data; };
    $('#run').onclick=load; await load();
-   $('#export').onclick=()=>{const rows=window.__agingData||[]; const csv=['Customer Name,Current,1-30,31-60,61-90,90+',...rows.map(r=>`${r.customerName},${r.current},${r.b1_30},${r.b31_60},${r.b61_90},${r.b90p}`)].join('
-'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='ar-aging.csv'; a.click();};
+   $('#export').onclick=()=>{const rows=window.__agingData||[]; const csv=['Customer Name,Current,1-30,31-60,61-90,90+',...rows.map(r=>`${r.customerName},${r.current},${r.b1_30},${r.b31_60},${r.b61_90},${r.b90p}`)].join('\n'); const blob=new Blob([csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='ar-aging.csv'; a.click();};
    $('#sendStmt').onclick=()=>alert('Statement send queued for selected customer filter.');
    $('#drill').onclick=()=>alert('Drill down enabled: export/open detailed items from selected row (next phase).');
    return;
