@@ -48,3 +48,9 @@ export const itemMaster = [
   { code:'ITEM-1006', name:'Shipping Fee', type:'Non-Inventory', uom:'Each', salesPrice:25, cost:25, taxable:false, status:'Active' },
   { code:'ITEM-1007', name:'Printer Head Replacement', type:'Inventory', uom:'Each', salesPrice:650, cost:420, taxable:true, status:'Active' }
 ];
+
+export const branchMaster = [
+  { code:'100', name:'Chicago HQ' },
+  { code:'200', name:'Dallas Warehouse' },
+  { code:'300', name:'New York Office' }
+];
