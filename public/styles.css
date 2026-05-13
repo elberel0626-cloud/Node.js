@@ -23,3 +23,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .grid-resizer{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize}
 .grid-filter-pop{background:#fff;border:1px solid #bcc8d9;padding:8px;z-index:20;box-shadow:0 2px 8px #0002;display:grid;gap:6px;min-width:220px}
 .grid-tools{display:flex;gap:8px;margin:6px 0}
+.grid-sort{position:relative;min-width:80px}
+.grid-resizer{background:transparent;border-right:2px solid #d0d7e2}
+.grid-resizer:hover{border-right-color:#1f5fae}
+#view table{table-layout:fixed}
