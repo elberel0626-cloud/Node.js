@@ -19,3 +19,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .tab-pane{background:#fff;border:1px solid #bcc8d9;padding:8px}.table-wrap{overflow:auto}
 .finance-grid{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:10px;margin-top:10px}
 .panel h4{margin:0 0 6px 0}
+.th-wrap{display:flex;align-items:center;gap:6px;position:relative}
+.grid-resizer{position:absolute;right:0;top:0;width:6px;height:100%;cursor:col-resize}
+.grid-filter-pop{background:#fff;border:1px solid #bcc8d9;padding:8px;z-index:20;box-shadow:0 2px 8px #0002;display:grid;gap:6px;min-width:220px}
+.grid-tools{display:flex;gap:8px;margin:6px 0}
