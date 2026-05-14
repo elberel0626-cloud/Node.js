@@ -39,3 +39,5 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .filtered-col .grid-filter-btn{color:#0b4ea2;font-weight:700}
 .f-badge{font-size:10px;background:#0b4ea2;color:#fff;border-radius:8px;padding:1px 5px;margin-left:4px}
 .hidden{display:none!important}
+
+.grid-check-col{width:40px;min-width:40px;max-width:40px;padding:6px 4px;text-align:center}
