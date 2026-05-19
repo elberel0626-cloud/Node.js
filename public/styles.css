@@ -39,8 +39,3 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .filtered-col .grid-filter-btn{color:#0b4ea2;font-weight:700}
 .f-badge{font-size:10px;background:#0b4ea2;color:#fff;border-radius:8px;padding:1px 5px;margin-left:4px}
 .hidden{display:none!important}
-
-.grid-check-col{width:40px;min-width:40px;max-width:40px;padding:6px 4px;text-align:center}
-
-#actionsMenu{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:8px 10px;font-size:14px;height:auto;cursor:pointer}
-#actionsMenu:hover{background:#174d90}
