@@ -50,6 +50,9 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='DELETE'&&pathname.startsWith('/api/ar/customers/')){ const id=pathname.split('/').pop(); if(arDocuments.some(d=>d.customerId===id)) return json(res,400,{error:'Cannot delete customer with transactions'}); const i=customers.findIndex(c=>c.id===id); if(i<0) return json(res,404,{error:'Customer not found'}); customers.splice(i,1); return json(res,200,{ok:true}); }
 
  if(method==='GET'&&pathname==='/api/finance/branches') return json(res,200,branchMaster);
+ if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ return json(res,200,glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,normalBalance:a.normal,active:a.active!==false,currentBalance:Number(a.balance||0),debits:Number(a.balance||0)>0?Number(a.balance):0,credits:Number(a.balance||0)<0?Math.abs(Number(a.balance)):0,balance:Number(a.balance||0)}))); }
+ if(method==='GET'&&pathname==='/api/finance/trial-balance'){ const rows=glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,debit:Number(a.balance||0)>0?Number(a.balance):0,credit:Number(a.balance||0)<0?Math.abs(Number(a.balance)):0,balance:Number(a.balance||0)})); return json(res,200,{rows,totals:{totalDebits:rows.reduce((t,r)=>t+r.debit,0),totalCredits:rows.reduce((t,r)=>t+r.credit,0),netDifference:rows.reduce((t,r)=>t+r.debit-r.credit,0)}}); }
+
 
  if(method==='GET'&&pathname==='/api/inventory/items') return json(res,200,itemMaster);
 
