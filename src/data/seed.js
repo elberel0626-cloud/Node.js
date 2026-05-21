@@ -47,3 +47,13 @@ export const branchMaster = [
   { code:'200', name:'Dallas Warehouse' },
   { code:'300', name:'New York Office' }
 ];
+
+
+export const vendors = [
+  {id:'VEND-1001',name:'North Supply',status:'Active',address:'100 Main',phone:'555-1001',email:'ap@north.com',terms:'NET30',taxId:'TIN1001',currency:'USD',paymentMethod:'Check'},
+  {id:'VEND-1002',name:'Prime Industrial',status:'Active',address:'200 Lake',phone:'555-1002',email:'ap@prime.com',terms:'NET15',taxId:'TIN1002',currency:'USD',paymentMethod:'ACH/Wire'}
+];
+export const apDocuments = [
+  {id:'BILL-1001',type:'Bill',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-10',dueDate:'2026-06-09',terms:'NET30',amount:2500,balance:2500,status:'Saved',posted:false,lines:[]},
+  {id:'PAY-AP-1001',type:'Payment',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-15',method:'Check',checkNumber:'9001',amount:1000,unappliedBalance:1000,status:'Saved',posted:false,applications:[]}
+];
