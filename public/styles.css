@@ -8,6 +8,7 @@ input,select,button{padding:8px 10px;border:1px solid var(--border);border-radiu
 .content{padding:16px}.grid4{display:grid;grid-template-columns:repeat(2,minmax(260px,1fr));gap:14px}.panel{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px}
 .panel h3{margin:0 0 8px}.panel ul{margin:0;padding-left:18px;display:grid;gap:6px}.panel a{text-decoration:none;color:#1f5fae}
 table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border)}th,td{border-bottom:1px solid var(--border);padding:8px;text-align:left}
+.grid-check-col{width:40px;min-width:40px;max-width:40px;padding:4px 6px;text-align:center}
 .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .link{color:#1f5fae;cursor:pointer;text-decoration:underline}
 .erp-toolbar{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);padding:8px;margin-bottom:8px}
@@ -39,3 +40,5 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .filtered-col .grid-filter-btn{color:#0b4ea2;font-weight:700}
 .f-badge{font-size:10px;background:#0b4ea2;color:#fff;border-radius:8px;padding:1px 5px;margin-left:4px}
 .hidden{display:none!important}
+
+.nav-group{margin:0 0 12px 0;padding:0 0 8px 0;border-bottom:1px solid #d8e2f1}.nav-group:last-child{border-bottom:none}.nav-group-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6f8d;margin:6px 8px 4px;font-weight:700}
