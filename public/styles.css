@@ -40,3 +40,5 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .filtered-col .grid-filter-btn{color:#0b4ea2;font-weight:700}
 .f-badge{font-size:10px;background:#0b4ea2;color:#fff;border-radius:8px;padding:1px 5px;margin-left:4px}
 .hidden{display:none!important}
+
+.nav-group{margin:0 0 12px 0;padding:0 0 8px 0;border-bottom:1px solid #d8e2f1}.nav-group:last-child{border-bottom:none}.nav-group-title{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#5b6f8d;margin:6px 8px 4px;font-weight:700}
