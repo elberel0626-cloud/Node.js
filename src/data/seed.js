@@ -12,15 +12,8 @@ export const customers = [
   { id: 'CUST-1004', name: 'Northern Supply Co', terms: 'NET45', status: 'Active' }
 ];
 
-export const glAccounts = [
-  { code: '1000', name: 'Cash', normal: 'Debit', balance: 100000 },
-  { code: '1100', name: 'Accounts Receivable', normal: 'Debit', balance: 0 },
-  { code: '4000', name: 'Revenue', normal: 'Credit', balance: 0 },
-  { code: '4050', name: 'Returns and Allowances', normal: 'Debit', balance: 0 },
-  { code: '2100', name: 'Tax Payable', normal: 'Credit', balance: 0 },
-  { code: '5000', name: 'Cost of Goods Sold', normal: 'Debit', balance: 0 },
-  { code: '1200', name: 'Inventory', normal: 'Debit', balance: 50000 }
-];
+import { chartOfAccountsSeed } from './chartOfAccountsSeed.js';
+export const glAccounts = chartOfAccountsSeed.map(a=>({code:a.accountNumber,name:a.accountTitle,normal:a.balance<0?'Credit':'Debit',balance:Number(a.balance||0),accountType:a.accountType,active:true}));
 
 export const arDocuments = [
   { id: 'INV-1001', type: 'Invoice', customerId: 'CUST-1001', customerName: 'ABC Industries', date: '2026-05-01', dueDate: '2026-05-31', terms: 'NET30', amount: 12500, balance: 12500, status: 'Saved', posted: false, createdDate: '2026-05-01', lines:[{item:'Services',qty:1,unitPrice:12500,lineTotal:12500}], applications: [] },
