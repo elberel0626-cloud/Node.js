@@ -12,8 +12,15 @@ export const customers = [
   { id: 'CUST-1004', name: 'Northern Supply Co', terms: 'NET45', status: 'Active' }
 ];
 
-import { chartOfAccountsSeed } from './chartOfAccountsSeed.js';
-export const glAccounts = chartOfAccountsSeed.map(a=>({code:a.accountNumber,name:a.accountTitle,normal:a.balance<0?'Credit':'Debit',balance:Number(a.balance||0),accountType:a.accountType,active:true}));
+export const glAccounts = [
+  { code: '1000', name: 'Cash', normal: 'Debit', balance: 100000 },
+  { code: '1100', name: 'Accounts Receivable', normal: 'Debit', balance: 0 },
+  { code: '4000', name: 'Revenue', normal: 'Credit', balance: 0 },
+  { code: '4050', name: 'Returns and Allowances', normal: 'Debit', balance: 0 },
+  { code: '2100', name: 'Tax Payable', normal: 'Credit', balance: 0 },
+  { code: '5000', name: 'Cost of Goods Sold', normal: 'Debit', balance: 0 },
+  { code: '1200', name: 'Inventory', normal: 'Debit', balance: 50000 }
+];
 
 export const arDocuments = [
   { id: 'INV-1001', type: 'Invoice', customerId: 'CUST-1001', customerName: 'ABC Industries', date: '2026-05-01', dueDate: '2026-05-31', terms: 'NET30', amount: 12500, balance: 12500, status: 'Saved', posted: false, createdDate: '2026-05-01', lines:[{item:'Services',qty:1,unitPrice:12500,lineTotal:12500}], applications: [] },
@@ -46,14 +53,4 @@ export const branchMaster = [
   { code:'100', name:'Chicago HQ' },
   { code:'200', name:'Dallas Warehouse' },
   { code:'300', name:'New York Office' }
-];
-
-
-export const vendors = [
-  {id:'VEND-1001',name:'North Supply',status:'Active',address:'100 Main',phone:'555-1001',email:'ap@north.com',terms:'NET30',taxId:'TIN1001',currency:'USD',paymentMethod:'Check'},
-  {id:'VEND-1002',name:'Prime Industrial',status:'Active',address:'200 Lake',phone:'555-1002',email:'ap@prime.com',terms:'NET15',taxId:'TIN1002',currency:'USD',paymentMethod:'ACH/Wire'}
-];
-export const apDocuments = [
-  {id:'BILL-1001',type:'Bill',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-10',dueDate:'2026-06-09',terms:'NET30',amount:2500,balance:2500,status:'Saved',posted:false,lines:[]},
-  {id:'PAY-AP-1001',type:'Payment',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-15',method:'Check',checkNumber:'9001',amount:1000,unappliedBalance:1000,status:'Saved',posted:false,applications:[]}
 ];
