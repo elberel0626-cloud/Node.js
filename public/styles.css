@@ -59,3 +59,13 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .pay-head3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .pay-head3 .panel{display:grid;grid-template-columns:1fr;gap:6px}
 .pay-head3 label{display:flex;flex-direction:column;font-size:12px;gap:3px}
+
+
+/* ERP-wide read-only + required + validation styles */
+input[readonly], textarea[readonly], select[disabled], input:disabled, textarea:disabled {
+  background:#f2f4f7 !important;
+  color:#5f6b7a !important;
+}
+input:disabled, textarea:disabled, select:disabled { cursor:not-allowed; }
+label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
+.field-error{border-color:#c62828 !important;box-shadow:0 0 0 1px #c6282840}
