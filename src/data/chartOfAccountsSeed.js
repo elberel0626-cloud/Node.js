@@ -26,6 +26,7 @@ export const chartOfAccountsSeed = [
   { accountType:'Income/Expense', accountNumber:'4020', accountTitle:'Service Income - M & R', balance:-2263432.47 },
   { accountType:'Income/Expense', accountNumber:'4045', accountTitle:'Freight Income', balance:-483575.32 },
   { accountType:'Income/Expense', accountNumber:'4070', accountTitle:'Returns & Allowances', balance:192524.42 },
+  { accountType:'Income/Expense', accountNumber:'6060', accountTitle:'Bank Service Charges', balance:0 },
   { accountType:'Income/Expense', accountNumber:'5110', accountTitle:'Raw Materials', balance:10299276.83 },
   { accountType:'Income/Expense', accountNumber:'5120', accountTitle:'Labor - Factory', balance:2039618.6 },
   { accountType:'Income/Expense', accountNumber:'5160', accountTitle:'Labor - Service', balance:1381150.98 },
