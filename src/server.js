@@ -3,7 +3,7 @@ import { parse } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { generateInvoicePdf } from './invoicePdf.js';
-import { sendInvoiceEmail } from './emailService.js';
+import { formatSmtpError, resolveSmtpSettings, sendInvoiceEmail, validateSmtpSettings } from './emailService.js';
 import { apDocuments, arDocuments, branchMaster, creditTerms, customers, glAccounts, itemMaster, journalEntries, vendors } from './data/seed.js';
 
 const publicDir = path.resolve('public');
@@ -13,6 +13,7 @@ const periodModules = ['AR','AP','GL','Inventory'];
 const financialPeriods = [];
 const periodHistory = [];
 const invoiceEmailHistory = [];
+const runtimeEmailSettings = {};
 let applicationSeq = 1;
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
 const isAuthenticated=(req)=>/erp_session=admin/.test(String(req.headers.cookie||''));
@@ -124,6 +125,20 @@ function changePeriodStatus(periodId,module,newStatus,action,notes=''){
 }
 
 
+
+function savedEmailSettings(){
+  const settings=resolveSmtpSettings(runtimeEmailSettings);
+  return {smtpHost:settings.SMTP_HOST||'',smtpPort:settings.SMTP_PORT||'',smtpUser:settings.SMTP_USER||'',fromEmail:settings.SMTP_FROM||settings.SMTP_USER||'',hasPassword:Boolean(settings.SMTP_PASS),configured:Boolean(settings.SMTP_HOST&&settings.SMTP_PORT&&settings.SMTP_USER&&settings.SMTP_PASS),gmailWarning:'Gmail requires App Passwords when 2FA is enabled.'};
+}
+function updateRuntimeEmailSettings(input={}){
+  if('smtpHost' in input || 'SMTP_HOST' in input) runtimeEmailSettings.SMTP_HOST=input.smtpHost??input.SMTP_HOST??'';
+  if('smtpPort' in input || 'SMTP_PORT' in input) runtimeEmailSettings.SMTP_PORT=input.smtpPort??input.SMTP_PORT??'';
+  if('smtpUser' in input || 'SMTP_USER' in input) runtimeEmailSettings.SMTP_USER=input.smtpUser??input.SMTP_USER??'';
+  if('smtpPass' in input || 'SMTP_PASS' in input){ const pass=input.smtpPass??input.SMTP_PASS??''; if(pass) runtimeEmailSettings.SMTP_PASS=pass; }
+  if('fromEmail' in input || 'SMTP_FROM' in input) runtimeEmailSettings.SMTP_FROM=input.fromEmail??input.SMTP_FROM??'';
+  return resolveSmtpSettings(runtimeEmailSettings);
+}
+
 const companyName=()=>process.env.COMPANY_NAME||'Company';
 function emailHistoryFor(invoiceId){ const h=invoiceEmailHistory.filter(x=>x.invoiceNumber===invoiceId).at(-1); return h?{lastSentDate:h.sentDate,emailStatus:h.emailStatus}:{}; }
 async function sendArInvoices({invoiceIds=[]},req){
@@ -133,7 +148,7 @@ async function sendArInvoices({invoiceIds=[]},req){
   const now=new Date().toISOString(); const sentBy='admin'; const failures=[]; const groups=new Map();
   for(const id of ids){
     const invoice=arDocuments.find(d=>d.id===id&&['Invoice','Credit Memo','Debit Memo'].includes(d.type));
-    if(!invoice){ failures.push({invoiceNumber:id,emailStatus:'Failed',errorMessage:`Invoice ${id} was not found`}); continue; }
+    if(!invoice){ const row={invoiceNumber:id,customer:'',customerEmail:'',sentDate:now,sentBy,emailStatus:'Failed',errorMessage:`Invoice ${id} was not found`,attachmentName:''}; results.push(row); failures.push(row); continue; }
     const customer=customers.find(c=>c.id===invoice.customerId);
     if(!customer?.email){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||customer?.name||'',customerEmail:'',sentDate:now,sentBy,emailStatus:'Failed',errorMessage:`Customer email is missing for invoice ${invoice.id}.`,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); continue; }
     const key=customer.id||customer.email; if(!groups.has(key)) groups.set(key,{customer,email:customer.email,invoices:[]}); groups.get(key).invoices.push(invoice);
@@ -145,13 +160,14 @@ async function sendArInvoices({invoiceIds=[]},req){
     const subject=group.invoices.length===1?`Invoice ${invoiceList} from ${companyName()}`:`Invoices ${invoiceList} from ${companyName()}`;
     const bodyText=group.invoices.length===1?`Hello ${group.customer.name},\n\nPlease find attached invoice ${invoiceList}.\n\nThank you,\n${companyName()}`:`Hello ${group.customer.name},\n\nPlease find attached invoices ${invoiceList}.\n\nThank you,\n${companyName()}`;
     try{
-      await sendInvoiceEmail({to:group.email,subject,body:bodyText,attachments});
+      await sendInvoiceEmail({to:group.email,subject,body:bodyText,attachments,settings:resolveSmtpSettings(runtimeEmailSettings)});
       for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Sent',errorMessage:'',attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); sent++; }
     }catch(e){
-      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Failed',errorMessage:e.message,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); }
+      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Failed',errorMessage:formatSmtpError(e),attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); }
     }
   }
-  return {sent,failed:failures.length,message:`${sent} invoices sent successfully. ${failures.length} failed.`,results};
+  const failureDetails=failures.map(f=>`${f.invoiceNumber}: ${f.errorMessage}`).join(' | ');
+  return {sent,failed:failures.length,message:`${sent} invoices sent successfully. ${failures.length} failed.${failureDetails?' '+failureDetails:''}`,results};
 }
 function normalizeArStatus(doc){
   if(!doc) return;
@@ -286,6 +302,10 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
    }
    return json(res,200,{period:serializePeriod(ensurePeriod(periodId)),results});
  }
+
+ if(method==='GET'&&pathname==='/api/finance/email-settings'){ if(!isAuthenticated(req)) return json(res,401,{error:'Authentication required'}); return json(res,200,savedEmailSettings()); }
+ if(method==='POST'&&pathname==='/api/finance/email-settings'){ if(!isAuthenticated(req)) return json(res,401,{error:'Authentication required'}); const b=await body(req); const settings=updateRuntimeEmailSettings(b); validateSmtpSettings(settings); return json(res,200,savedEmailSettings()); }
+ if(method==='POST'&&pathname==='/api/finance/email-settings/test'){ if(!isAuthenticated(req)) return json(res,401,{error:'Authentication required'}); const b=await body(req); if(!b.to) return json(res,400,{error:'Test email address is required'}); const settings=updateRuntimeEmailSettings(b); try{ await sendInvoiceEmail({to:b.to,subject:`Test email from ${companyName()}`,body:`This is a test email from ${companyName()} ERP.\n\nGmail note: use an App Password when 2FA is enabled.`,attachments:[],settings}); return json(res,200,{ok:true,message:`Test email sent to ${b.to}.`,settings:savedEmailSettings()}); }catch(e){ return json(res,400,{error:formatSmtpError(e),settings:savedEmailSettings()}); } }
  if(method==='GET'&&pathname==='/api/finance/branches') return json(res,200,branchMaster);
  if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ return json(res,200,glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,normalBalance:a.normal,active:a.active!==false,currentBalance:Number(a.balance||0),debits:Number(a.debits??(Number(a.balance||0)>0?Number(a.balance):0)),credits:Number(a.credits??(Number(a.balance||0)<0?Math.abs(Number(a.balance)):0)),balance:Number(a.balance||0)}))); }
  if(method==='GET'&&pathname==='/api/finance/trial-balance'){ const rows=glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,debit:Number(a.debits??(Number(a.balance||0)>0?Number(a.balance):0)),credit:Number(a.credits??(Number(a.balance||0)<0?Math.abs(Number(a.balance)):0)),balance:Number(a.balance||0)})); return json(res,200,{rows,totals:{totalDebits:rows.reduce((t,r)=>t+r.debit,0),totalCredits:rows.reduce((t,r)=>t+r.credit,0),netDifference:rows.reduce((t,r)=>t+r.debit-r.credit,0)}}); }
