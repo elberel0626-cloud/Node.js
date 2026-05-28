@@ -2,6 +2,8 @@ import http from 'node:http';
 import { parse } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { generateInvoicePdf } from './invoicePdf.js';
+import { sendInvoiceEmail } from './emailService.js';
 import { apDocuments, arDocuments, branchMaster, creditTerms, customers, glAccounts, itemMaster, journalEntries, vendors } from './data/seed.js';
 
 const publicDir = path.resolve('public');
@@ -10,8 +12,11 @@ const inventoryTransactions = [];
 const periodModules = ['AR','AP','GL','Inventory'];
 const financialPeriods = [];
 const periodHistory = [];
+const invoiceEmailHistory = [];
 let applicationSeq = 1;
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
+const isAuthenticated=(req)=>/erp_session=admin/.test(String(req.headers.cookie||''));
+const requireAuthenticated=(req)=>{ if(!isAuthenticated(req)) throw new Error('Authentication required'); };
 const body=(req)=>new Promise((resolve,reject)=>{let r='';req.on('data',c=>r+=c);req.on('end',()=>{try{resolve(r?JSON.parse(r):{});}catch{reject(new Error('Invalid JSON'));}});req.on('error',reject);});
 const POSTING_ACCOUNTS={arCash:'1079',apCash:'1084',accountsReceivable:'1210',accountsPayable:'2020',returnsAllowances:'4070',bankFees:'6060',defaultSalesRevenue:'4008'};
 const PLACEHOLDER_ACCOUNTS=new Set(['Cash','AR','AP','Revenue','Expense','1000','1100','2010','4000','4050','5000']);
@@ -118,6 +123,36 @@ function changePeriodStatus(periodId,module,newStatus,action,notes=''){
   auditPeriod(periodId,module,action,prev,newStatus,notes); return serializePeriod(p);
 }
 
+
+const companyName=()=>process.env.COMPANY_NAME||'Company';
+function emailHistoryFor(invoiceId){ const h=invoiceEmailHistory.filter(x=>x.invoiceNumber===invoiceId).at(-1); return h?{lastSentDate:h.sentDate,emailStatus:h.emailStatus}:{}; }
+async function sendArInvoices({invoiceIds=[]},req){
+  requireAuthenticated(req);
+  const ids=[...new Set((invoiceIds||[]).map(String).filter(Boolean))]; const results=[];
+  if(!ids.length) throw new Error('Select at least one invoice to send');
+  const now=new Date().toISOString(); const sentBy='admin'; const failures=[]; const groups=new Map();
+  for(const id of ids){
+    const invoice=arDocuments.find(d=>d.id===id&&['Invoice','Credit Memo','Debit Memo'].includes(d.type));
+    if(!invoice){ failures.push({invoiceNumber:id,emailStatus:'Failed',errorMessage:`Invoice ${id} was not found`}); continue; }
+    const customer=customers.find(c=>c.id===invoice.customerId);
+    if(!customer?.email){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||customer?.name||'',customerEmail:'',sentDate:now,sentBy,emailStatus:'Failed',errorMessage:`Customer email is missing for invoice ${invoice.id}.`,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); continue; }
+    const key=customer.id||customer.email; if(!groups.has(key)) groups.set(key,{customer,email:customer.email,invoices:[]}); groups.get(key).invoices.push(invoice);
+  }
+  let sent=0;
+  for(const group of groups.values()){
+    const attachments=group.invoices.map(invoice=>({filename:`Invoice-${invoice.id}.pdf`,contentType:'application/pdf',content:generateInvoicePdf({invoice,customer:group.customer,companyName:companyName()})}));
+    const invoiceList=group.invoices.map(i=>i.id).join(', ');
+    const subject=group.invoices.length===1?`Invoice ${invoiceList} from ${companyName()}`:`Invoices ${invoiceList} from ${companyName()}`;
+    const bodyText=group.invoices.length===1?`Hello ${group.customer.name},\n\nPlease find attached invoice ${invoiceList}.\n\nThank you,\n${companyName()}`:`Hello ${group.customer.name},\n\nPlease find attached invoices ${invoiceList}.\n\nThank you,\n${companyName()}`;
+    try{
+      await sendInvoiceEmail({to:group.email,subject,body:bodyText,attachments});
+      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Sent',errorMessage:'',attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); sent++; }
+    }catch(e){
+      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Failed',errorMessage:e.message,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); }
+    }
+  }
+  return {sent,failed:failures.length,message:`${sent} invoices sent successfully. ${failures.length} failed.`,results};
+}
 function normalizeArStatus(doc){
   if(!doc) return;
   const old=doc.status;
@@ -210,7 +245,7 @@ async function serve(p,res){ if(p==='/app.js'||p==='/styles.css'){const c=await 
 
 const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; try{
  if(method==='GET'&&await serve(pathname,res)) return;
- if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); return b.username==='admin'&&b.password==='admin'?json(res,200,{ok:true}):json(res,401,{error:'Invalid'});}
+ if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); if(b.username==='admin'&&b.password==='admin'){res.setHeader('Set-Cookie','erp_session=admin; HttpOnly; SameSite=Lax; Path=/'); return json(res,200,{ok:true});} return json(res,401,{error:'Invalid'});}
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers);
  if(method==='GET'&&pathname==='/api/ar/credit-terms') return json(res,200,creditTerms);
  if(method==='POST'&&pathname==='/api/ar/customers'){ const b=await body(req); if(!b.name) return json(res,400,{error:'Customer Name required'}); const next=`CUST-${String(customers.reduce((m,c)=>Math.max(m,Number(String(c.id||'').split('-')[1]||1000)),1000)+1).padStart(4,'0')}`; const id=b.id||next; if(customers.find(c=>c.id===id)) return json(res,400,{error:'Customer ID must be unique'}); const c={id,name:b.name,status:b.status||'Active',billingAddress:b.billingAddress||'',shippingAddress:b.shippingAddress||'',phone:b.phone||'',email:b.email||'',terms:b.terms||'NET30',taxZone:b.taxZone||'DEFAULT',currency:b.currency||'USD',contactPerson:b.contactPerson||''}; customers.push(c); return json(res,201,c); }
@@ -262,6 +297,8 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='POST'&&pathname==='/api/inventory/transactions/post'){ const {id}=await body(req); const t=inventoryTransactions.find(x=>x.id===id); if(!t) return json(res,404,{error:'Inventory transaction not found'}); const pp=t.postPeriod||periodFromDate(t.postDate||t.date); validateSourceAndGlOpen('Inventory',pp); if(t.status!=='Saved') return json(res,400,{error:'Only Saved inventory transactions can be posted'}); const postingLines=(t.lines||[]).filter(l=>l.account&&(Number(l.debit||0)||Number(l.credit||0))); if(postingLines.length) t.jeNumber=createPostedJournal({module:'Inventory',description:`Inventory posting ${t.id}`,postPeriod:pp,transactionDate:t.postDate||t.date,sourceRef:t.id,lines:postingLines}); t.status='Released'; return json(res,200,t); }
  if(method==='GET'&&pathname==='/api/inventory/items') return json(res,200,itemMaster);
 
+ if(method==='GET'&&pathname==='/api/ar/invoices/send-history'){ return json(res,200,invoiceEmailHistory); }
+ if(method==='POST'&&pathname==='/api/ar/invoices/send'){ if(!isAuthenticated(req)) return json(res,401,{error:'Authentication required'}); const result=await sendArInvoices(await body(req),req); return json(res,200,result); }
  if(method==='GET'&&pathname==='/api/ar/open-invoices'){ normalizeAllArStatuses(); const cid=query.customerId; const data=arDocuments.filter(d=>d.type==='Invoice'&&d.customerId===cid&&d.balance>0&&d.status!=='Voided'&&d.status!=='Closed'); return json(res,200,data); }
  if(method==='GET'&&pathname==='/api/ar/documents'){ normalizeAllArStatuses(); let data=[...arDocuments]; if(query.type)data=data.filter(d=>d.type===query.type); if(query.customerId)data=data.filter(d=>d.customerId===query.customerId); if(query.status)data=data.filter(d=>d.status===query.status); return json(res,200,data); }
  if(method==='GET'&&pathname.startsWith('/api/ar/documents/')){const id=pathname.split('/').pop(); const d=arDocuments.find(x=>x.id===id); normalizeArStatus(d); return d?json(res,200,d):json(res,404,{error:'Not found'});}
