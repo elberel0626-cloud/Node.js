@@ -13,7 +13,7 @@ const periodHistory = [];
 let applicationSeq = 1;
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
 const body=(req)=>new Promise((resolve,reject)=>{let r='';req.on('data',c=>r+=c);req.on('end',()=>{try{resolve(r?JSON.parse(r):{});}catch{reject(new Error('Invalid JSON'));}});req.on('error',reject);});
-const acct=(code)=>glAccounts.find(a=>a.code===code); const bump=(code,side,amt)=>{const a=acct(code);if(!a)return;a.balance+=(a.normal===side?amt:-amt)};
+const acct=(code)=>glAccounts.find(a=>a.code===code); const bump=(code,side,amt)=>{const a=acct(code);if(!a)return; if(side==='Debit'){a.debits=Number(a.debits||0)+amt; a.balance=Number(a.balance||0)+amt;} if(side==='Credit'){a.credits=Number(a.credits||0)+amt; a.balance=Number(a.balance||0)-amt;}};
 const nextId=(prefix)=>`${prefix}-${String(arDocuments.filter(d=>d.id.startsWith(prefix+'-')).length+1001).padStart(4,'0')}`;
 const toNumber=(v)=>Number(v||0);
 
@@ -132,8 +132,8 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
    return json(res,200,{period:serializePeriod(ensurePeriod(periodId)),results});
  }
  if(method==='GET'&&pathname==='/api/finance/branches') return json(res,200,branchMaster);
- if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ return json(res,200,glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,normalBalance:a.normal,active:a.active!==false,currentBalance:Number(a.balance||0),debits:Number(a.balance||0)>0?Number(a.balance):0,credits:Number(a.balance||0)<0?Math.abs(Number(a.balance)):0,balance:Number(a.balance||0)}))); }
- if(method==='GET'&&pathname==='/api/finance/trial-balance'){ const rows=glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,debit:Number(a.balance||0)>0?Number(a.balance):0,credit:Number(a.balance||0)<0?Math.abs(Number(a.balance)):0,balance:Number(a.balance||0)})); return json(res,200,{rows,totals:{totalDebits:rows.reduce((t,r)=>t+r.debit,0),totalCredits:rows.reduce((t,r)=>t+r.credit,0),netDifference:rows.reduce((t,r)=>t+r.debit-r.credit,0)}}); }
+ if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ return json(res,200,glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,normalBalance:a.normal,active:a.active!==false,currentBalance:Number(a.balance||0),debits:Number(a.debits??(Number(a.balance||0)>0?Number(a.balance):0)),credits:Number(a.credits??(Number(a.balance||0)<0?Math.abs(Number(a.balance)):0)),balance:Number(a.balance||0)}))); }
+ if(method==='GET'&&pathname==='/api/finance/trial-balance'){ const rows=glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,debit:Number(a.debits??(Number(a.balance||0)>0?Number(a.balance):0)),credit:Number(a.credits??(Number(a.balance||0)<0?Math.abs(Number(a.balance)):0)),balance:Number(a.balance||0)})); return json(res,200,{rows,totals:{totalDebits:rows.reduce((t,r)=>t+r.debit,0),totalCredits:rows.reduce((t,r)=>t+r.credit,0),netDifference:rows.reduce((t,r)=>t+r.debit-r.credit,0)}}); }
 
 
 

@@ -13,7 +13,7 @@ export const customers = [
 ];
 
 import { chartOfAccountsSeed } from './chartOfAccountsSeed.js';
-export const glAccounts = chartOfAccountsSeed.map(a=>({code:a.accountNumber,name:a.accountTitle,normal:a.balance<0?'Credit':'Debit',balance:Number(a.balance||0),accountType:a.accountType,active:true}));
+export const glAccounts = chartOfAccountsSeed.map(a=>({code:a.accountNumber,name:a.accountTitle,normal:a.balance<0?'Credit':'Debit',balance:Number(a.balance||0),debits:Number(a.debits||0),credits:Number(a.credits||0),accountType:a.accountType,active:true}));
 
 export const arDocuments = [
   { id: 'INV-1001', type: 'Invoice', customerId: 'CUST-1001', customerName: 'ABC Industries', date: '2026-05-01', dueDate: '2026-05-31', terms: 'NET30', amount: 12500, balance: 12500, status: 'Saved', posted: false, createdDate: '2026-05-01', lines:[{item:'Services',qty:1,unitPrice:12500,lineTotal:12500}], applications: [] },
