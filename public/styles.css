@@ -12,7 +12,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .link{color:#1f5fae;cursor:pointer;text-decoration:underline}
 .erp-toolbar{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);padding:8px;margin-bottom:8px}
-.sticky{position:sticky;top:0;z-index:5}
+.sticky{position:sticky;top:0;z-index:2000}
 .erp-workspace{background:#f1f1f1;border:1px solid #cfd6df;padding:10px}
 .erp-header-grid{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:8px;background:#fff;border:1px solid #d0d7e2;padding:10px}
 .erp-header-grid label{display:flex;flex-direction:column;font-size:12px;gap:3px}
@@ -70,12 +70,12 @@ input:disabled, textarea:disabled, select:disabled { cursor:not-allowed; }
 label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
 .field-error{border-color:#c62828 !important;box-shadow:0 0 0 1px #c6282840}
 .actions-menu-wrap{position:relative;display:inline-block}
-.actions-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:1000;min-width:150px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 24px #0003;padding:6px;display:grid;gap:4px}
+.actions-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:10000;min-width:150px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 24px #0003;padding:6px;display:grid;gap:4px}
 .actions-menu button{width:100%;background:#fff;color:var(--text);text-align:left;border:0;border-radius:6px}
 .actions-menu button:hover{background:#eef5ff}
 .actions-menu button:disabled{color:#91a0b3;cursor:not-allowed;background:#f7f9fc}
-.toolbar-dropdown{position:relative;display:inline-block}
-.toolbar-dropdown-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:1000;min-width:150px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 24px #0003;padding:6px;display:grid;gap:4px}
+.toolbar-dropdown{position:relative;display:inline-block;pointer-events:auto}
+.toolbar-dropdown-menu{position:absolute;top:calc(100% + 4px);left:0;z-index:10000;min-width:150px;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 10px 24px #0003;padding:6px;display:grid;gap:4px}
 .toolbar-dropdown-menu button{width:100%;background:#fff;color:var(--text);text-align:left;border:0;border-radius:6px}
 .toolbar-dropdown-menu button:hover{background:#eef5ff}
 .toolbar-dropdown-menu button:disabled{color:#91a0b3;cursor:not-allowed;background:#f7f9fc}
