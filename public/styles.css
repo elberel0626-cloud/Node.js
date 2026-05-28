@@ -76,3 +76,18 @@ label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
 .actions-menu button{width:100%;background:#fff;color:var(--text);text-align:left;border:0;border-radius:6px}
 .actions-menu button:hover{background:#eef5ff}
 .actions-menu button:disabled{color:#91a0b3;cursor:not-allowed;background:#f7f9fc}
+
+/* Financial Period Management */
+.period-screen{font-size:12px;color:#1f2d3d}
+.period-toolbar{display:flex;gap:4px;align-items:center;background:#eef2f7;border:1px solid #bfc8d6;border-bottom:0;padding:5px 6px;position:sticky;top:0;z-index:5}
+.period-toolbar button{border-radius:0;border:1px solid #9fb0c6;background:#fff;color:#12365f;padding:4px 9px;font-size:12px}
+.period-toolbar button:hover{background:#e2efff}
+.period-grid{width:100%;border-collapse:collapse;background:#fff;font-size:12px;white-space:nowrap}
+.period-grid th{background:#dfe7f2;border:1px solid #b8c4d5;color:#223047;font-weight:600;text-align:left;padding:5px 7px}
+.period-grid td{border:1px solid #c9d3df;padding:4px 7px;vertical-align:middle}
+.period-grid tr:nth-child(even) td{background:#f8fafc}
+.period-grid tr.selected-row td{background:#fff7df}
+.period-status{display:inline-block;min-width:48px;text-align:center;border:1px solid #b8c4d5;border-radius:2px;padding:1px 6px;font-weight:600;font-size:11px}
+.period-status.open{background:#e9f7ef;color:#17633a;border-color:#a8d5ba}
+.period-status.closed{background:#f1f3f6;color:#42526a;border-color:#c4ccd7}
+.period-blocker-modal .cn-modal{width:min(900px,94vw)}
