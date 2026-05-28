@@ -27,15 +27,46 @@ function requireAccount(code,context='Posting account'){
 }
 const bump=(code,side,amt)=>{const accountCode=requireAccount(code); const a=acct(accountCode); const value=Number(amt||0); if(!value)return; if(side==='Debit'){a.debits=Number(a.debits||0)+value; a.balance=Number(a.balance||0)+value;} if(side==='Credit'){a.credits=Number(a.credits||0)+value; a.balance=Number(a.balance||0)-value;}};
 const nextJeNumber=(prefix='JE')=>`${prefix}${String(journalEntries.length+1).padStart(6,'0')}`;
-function createPostedJournal({module,description,postPeriod,transactionDate,sourceRef,lines,createdBy='system',reversalOf=''}){
-  const normalized=(lines||[]).map(l=>({account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference:l.sourceReference||sourceRef||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'})).filter(l=>l.debit||l.credit);
+function createPostedJournal({module,description,postPeriod,transactionDate,sourceRef,lines,createdBy='system',reversalOf='',reclassOf='',auditTrail=[]}){
+  const normalized=(lines||[]).map(l=>({account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference:l.sourceReference||sourceRef||'',description:l.description||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'})).filter(l=>l.debit||l.credit);
   const dr=normalized.reduce((s,l)=>s+l.debit,0); const cr=normalized.reduce((s,l)=>s+l.credit,0);
   if(!normalized.length) throw new Error('Journal entry must have at least one line');
   if(Math.round((dr-cr)*100)!==0) throw new Error(`Journal entry is out of balance: debits ${dr} credits ${cr}`);
   normalized.forEach(l=>{ if(l.debit)bump(l.account,'Debit',l.debit); if(l.credit)bump(l.account,'Credit',l.credit); });
   const jeNumber=nextJeNumber();
-  journalEntries.push({jeNumber,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module,description,financialPeriod:postPeriod,postPeriod,transactionDate,status:'Posted',sourceRef,createdBy,createdDate:new Date().toISOString(),reversalOf,lines:normalized});
+  journalEntries.push({jeNumber,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module,description,financialPeriod:postPeriod,postPeriod,transactionDate,status:'Posted',sourceRef,createdBy,createdDate:new Date().toISOString(),reversalOf,reclassOf,auditTrail,lines:normalized});
   return jeNumber;
+}
+function postedReclassCandidates(filters={}){
+  const account=String(filters.account||'').trim(); const accountTo=String(filters.accountTo||'').trim(); const from=String(filters.fromPeriod||'').trim(); const to=String(filters.toPeriod||'').trim(); const sourceJe=String(filters.sourceJe||'').trim(); const sourceRef=String(filters.sourceReference||filters.sourceRef||'').trim();
+  return journalEntries.filter(j=>j.status==='Posted'&&(!sourceJe||j.jeNumber===sourceJe)&&(!sourceRef||j.sourceRef===sourceRef||(j.lines||[]).some(l=>l.sourceReference===sourceRef))&&(!from||(j.postPeriod||j.financialPeriod)>=from)&&(!to||(j.postPeriod||j.financialPeriod)<=to)).flatMap(j=>(j.lines||[]).map((l,i)=>{ const amount=Number(l.debit||0)||Number(l.credit||0); return {id:`${j.jeNumber}:${i}`,lineIndex:i,checked:false,jeReference:j.jeNumber,sourceModule:j.module,sourceReference:j.sourceRef||l.sourceReference||'',period:j.postPeriod||j.financialPeriod,account:l.account,accountName:accountLabel(l.account),accountTo,accountToName:accountTo?accountLabel(accountTo):'',debit:Number(l.debit||0),credit:Number(l.credit||0),amount,description:l.description||j.description||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'}; })).filter(r=>r.amount&&(!account||r.account===account));
+}
+function processReclassification({toPeriod,transactionDate,lines=[]}){
+  const pp=toPeriod||periodFromDate(transactionDate); validatePeriodOpen('GL',pp);
+  const selected=(lines||[]).filter(l=>l.checked!==false);
+  if(!selected.length) throw new Error('Select at least one line to process');
+  const groups=new Map();
+  for(const l of selected){
+    const key=l.originalId||l.id||`${l.jeReference}:${l.lineIndex}`; const amt=Number(l.amount||0); if(amt<=0) throw new Error('Split amount must be positive');
+    const accountTo=requireAccount(l.accountTo,'Account To');
+    const source=postedReclassCandidates({sourceJe:l.jeReference}).find(r=>r.id===key); if(!source) throw new Error(`Source line ${key} was not found`);
+    if(accountTo===source.account) throw new Error('Account To must be different from Original Account');
+    if(!groups.has(key)) groups.set(key,{source,splits:[]}); groups.get(key).splits.push({...l,amount:amt,accountTo});
+  }
+  const jeLines=[]; const auditTrail=[];
+  for(const [key,g] of groups){
+    const total=g.splits.reduce((t,l)=>t+Number(l.amount||0),0); if(Math.round((total-g.source.amount)*100)!==0) throw new Error(`Split total for ${g.source.jeReference} must equal original line amount ${g.source.amount}`);
+    for(const split of g.splits){
+      const isDebit=Number(g.source.debit||0)>0;
+      jeLines.push({account:g.source.account,debit:isDebit?0:split.amount,credit:isDebit?split.amount:0,sourceReference:g.source.sourceReference||g.source.jeReference,branch:g.source.branch,branchName:g.source.branchName,description:`Reclass from ${g.source.jeReference}`});
+      jeLines.push({account:split.accountTo,debit:isDebit?split.amount:0,credit:isDebit?0:split.amount,sourceReference:g.source.sourceReference||g.source.jeReference,branch:g.source.branch,branchName:g.source.branchName,description:`Reclass to ${split.accountTo}`});
+      auditTrail.push({sourceJe:g.source.jeReference,sourceLine:g.source.lineIndex,sourceReference:g.source.sourceReference,originalAccount:g.source.account,accountTo:split.accountTo,amount:split.amount,periodFrom:g.source.period,periodTo:pp});
+    }
+  }
+  const dr=jeLines.reduce((t,l)=>t+Number(l.debit||0),0), cr=jeLines.reduce((t,l)=>t+Number(l.credit||0),0); if(Math.round((dr-cr)*100)!==0) throw new Error('Reclassification debits and credits must balance');
+  const sourceRefs=[...new Set(auditTrail.map(a=>a.sourceJe))]; const jeNumber=createPostedJournal({module:'GL',description:`Reclassification of ${sourceRefs.join(', ')}`,postPeriod:pp,transactionDate:transactionDate||`${pp}-01`,sourceRef:sourceRefs[0]||'RECLASS',lines:jeLines,createdBy:'admin',reclassOf:sourceRefs.join(','),auditTrail});
+  for(const ref of sourceRefs){ const orig=journalEntries.find(j=>j.jeNumber===ref); if(orig){ orig.reclassifications=orig.reclassifications||[]; orig.reclassifications.push({jeNumber,createdDate:new Date().toISOString(),lines:auditTrail.filter(a=>a.sourceJe===ref)}); } }
+  return journalEntries.find(j=>j.jeNumber===jeNumber);
 }
 function sourceAccountFromLine(line,keys,defaultAccount){
   for(const key of keys){ if(line?.[key]) return line[key]; }
@@ -209,7 +240,7 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
 
  if(method==='GET'&&pathname==='/api/inventory/transactions') return json(res,200,inventoryTransactions);
  if(method==='POST'&&pathname==='/api/inventory/transactions'){ const b=await body(req); const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('Inventory',pp); const id=`IN-${String(inventoryTransactions.length+1001).padStart(4,'0')}`; const t={id,type:b.type||'Adjustment',date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,status:'Saved',description:b.description||'',lines:b.lines||[]}; inventoryTransactions.push(t); return json(res,201,t); }
- if(method==='POST'&&pathname==='/api/inventory/transactions/post'){ const {id}=await body(req); const t=inventoryTransactions.find(x=>x.id===id); if(!t) return json(res,404,{error:'Inventory transaction not found'}); validatePeriodOpen('Inventory',t.postPeriod||periodFromDate(t.postDate||t.date)); if(t.status!=='Saved') return json(res,400,{error:'Only Saved inventory transactions can be posted'}); t.status='Released'; return json(res,200,t); }
+ if(method==='POST'&&pathname==='/api/inventory/transactions/post'){ const {id}=await body(req); const t=inventoryTransactions.find(x=>x.id===id); if(!t) return json(res,404,{error:'Inventory transaction not found'}); const pp=t.postPeriod||periodFromDate(t.postDate||t.date); validateSourceAndGlOpen('Inventory',pp); if(t.status!=='Saved') return json(res,400,{error:'Only Saved inventory transactions can be posted'}); const postingLines=(t.lines||[]).filter(l=>l.account&&(Number(l.debit||0)||Number(l.credit||0))); if(postingLines.length) t.jeNumber=createPostedJournal({module:'Inventory',description:`Inventory posting ${t.id}`,postPeriod:pp,transactionDate:t.postDate||t.date,sourceRef:t.id,lines:postingLines}); t.status='Released'; return json(res,200,t); }
  if(method==='GET'&&pathname==='/api/inventory/items') return json(res,200,itemMaster);
 
  if(method==='GET'&&pathname==='/api/ar/open-invoices'){ normalizeAllArStatuses(); const cid=query.customerId; const data=arDocuments.filter(d=>d.type==='Invoice'&&d.customerId===cid&&d.balance>0&&d.status!=='Voided'&&d.status!=='Closed'); return json(res,200,data); }
@@ -278,6 +309,8 @@ if(method==='POST'&&pathname==='/api/ar/documents/post'){ const {id}=await body(
 
 
  if(method==='GET'&&pathname==='/api/ar/payment-applications'){ let data=[...paymentApplications]; if(query.paymentId) data=data.filter(x=>x.paymentId===query.paymentId); if(query.invoiceId) data=data.filter(x=>x.appliedDocumentId===query.invoiceId); return json(res,200,data); }
+ if(method==='GET'&&pathname==='/api/finance/reclassify/search'){ return json(res,200,postedReclassCandidates(query)); }
+ if(method==='POST'&&pathname==='/api/finance/reclassify/process'){ const je=processReclassification(await body(req)); return json(res,201,je); }
  if(method==='GET'&&pathname==='/api/finance/journal-transactions'){ return json(res,200,journalEntries); }
  if(method==='GET'&&pathname.startsWith('/api/finance/journal-transactions/')){ const id=pathname.split('/').pop(); const je=journalEntries.find(j=>j.jeNumber===id); return je?json(res,200,je):json(res,404,{error:'JE not found'}); }
  if(method==='POST'&&pathname==='/api/finance/journal-transactions'){ const b=await body(req); const lines=b.lines||[]; const dr=lines.reduce((s,l)=>s+Number(l.debit||0),0); const cr=lines.reduce((s,l)=>s+Number(l.credit||0),0); if(dr!==cr) return json(res,400,{error:'Total debits must equal total credits'}); const postDate=b.postDate||b.transactionDate||new Date().toISOString().slice(0,10); const pp=periodFromDate(postDate); validatePeriodOpenForSave('GL',pp); const je={jeNumber:`JE${String(journalEntries.length+1).padStart(6,'0')}`,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module:'GL',description:b.description||'',financialPeriod:pp,postPeriod:pp,transactionDate:postDate,status:'Saved',sourceRef:b.sourceRef||'',createdBy:'admin',createdDate:new Date().toISOString(),lines:lines.map(l=>{ const account=requireAccount(l.account,'Journal line account'); return {branch:l.branch||'100',branchName:(branchMaster.find(b=>b.code===String(l.branch||'100'))?.name)||'Custom Branch',account,debit:Number(l.debit||0),credit:Number(l.credit||0),sourceReference:l.sourceReference||''}; })}; journalEntries.push(je); return json(res,201,je); }
