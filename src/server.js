@@ -2,6 +2,8 @@ import http from 'node:http';
 import { parse } from 'node:url';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { generateInvoicePdf } from './invoicePdf.js';
+import { sendInvoiceEmail } from './emailService.js';
 import { apDocuments, arDocuments, branchMaster, creditTerms, customers, glAccounts, itemMaster, journalEntries, vendors } from './data/seed.js';
 
 const publicDir = path.resolve('public');
@@ -10,8 +12,11 @@ const inventoryTransactions = [];
 const periodModules = ['AR','AP','GL','Inventory'];
 const financialPeriods = [];
 const periodHistory = [];
+const invoiceEmailHistory = [];
 let applicationSeq = 1;
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
+const isAuthenticated=(req)=>/erp_session=admin/.test(String(req.headers.cookie||''));
+const requireAuthenticated=(req)=>{ if(!isAuthenticated(req)) throw new Error('Authentication required'); };
 const body=(req)=>new Promise((resolve,reject)=>{let r='';req.on('data',c=>r+=c);req.on('end',()=>{try{resolve(r?JSON.parse(r):{});}catch{reject(new Error('Invalid JSON'));}});req.on('error',reject);});
 const POSTING_ACCOUNTS={arCash:'1079',apCash:'1084',accountsReceivable:'1210',accountsPayable:'2020',returnsAllowances:'4070',bankFees:'6060',defaultSalesRevenue:'4008'};
 const PLACEHOLDER_ACCOUNTS=new Set(['Cash','AR','AP','Revenue','Expense','1000','1100','2010','4000','4050','5000']);
@@ -27,15 +32,46 @@ function requireAccount(code,context='Posting account'){
 }
 const bump=(code,side,amt)=>{const accountCode=requireAccount(code); const a=acct(accountCode); const value=Number(amt||0); if(!value)return; if(side==='Debit'){a.debits=Number(a.debits||0)+value; a.balance=Number(a.balance||0)+value;} if(side==='Credit'){a.credits=Number(a.credits||0)+value; a.balance=Number(a.balance||0)-value;}};
 const nextJeNumber=(prefix='JE')=>`${prefix}${String(journalEntries.length+1).padStart(6,'0')}`;
-function createPostedJournal({module,description,postPeriod,transactionDate,sourceRef,lines,createdBy='system',reversalOf=''}){
-  const normalized=(lines||[]).map(l=>({account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference:l.sourceReference||sourceRef||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'})).filter(l=>l.debit||l.credit);
+function createPostedJournal({module,description,postPeriod,transactionDate,sourceRef,lines,createdBy='system',reversalOf='',reclassOf='',auditTrail=[]}){
+  const normalized=(lines||[]).map(l=>({account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference:l.sourceReference||sourceRef||'',description:l.description||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'})).filter(l=>l.debit||l.credit);
   const dr=normalized.reduce((s,l)=>s+l.debit,0); const cr=normalized.reduce((s,l)=>s+l.credit,0);
   if(!normalized.length) throw new Error('Journal entry must have at least one line');
   if(Math.round((dr-cr)*100)!==0) throw new Error(`Journal entry is out of balance: debits ${dr} credits ${cr}`);
   normalized.forEach(l=>{ if(l.debit)bump(l.account,'Debit',l.debit); if(l.credit)bump(l.account,'Credit',l.credit); });
   const jeNumber=nextJeNumber();
-  journalEntries.push({jeNumber,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module,description,financialPeriod:postPeriod,postPeriod,transactionDate,status:'Posted',sourceRef,createdBy,createdDate:new Date().toISOString(),reversalOf,lines:normalized});
+  journalEntries.push({jeNumber,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module,description,financialPeriod:postPeriod,postPeriod,transactionDate,status:'Posted',sourceRef,createdBy,createdDate:new Date().toISOString(),reversalOf,reclassOf,auditTrail,lines:normalized});
   return jeNumber;
+}
+function postedReclassCandidates(filters={}){
+  const account=String(filters.account||'').trim(); const accountTo=String(filters.accountTo||'').trim(); const from=String(filters.fromPeriod||'').trim(); const to=String(filters.toPeriod||'').trim(); const sourceJe=String(filters.sourceJe||'').trim(); const sourceRef=String(filters.sourceReference||filters.sourceRef||'').trim();
+  return journalEntries.filter(j=>j.status==='Posted'&&(!sourceJe||j.jeNumber===sourceJe)&&(!sourceRef||j.sourceRef===sourceRef||(j.lines||[]).some(l=>l.sourceReference===sourceRef))&&(!from||(j.postPeriod||j.financialPeriod)>=from)&&(!to||(j.postPeriod||j.financialPeriod)<=to)).flatMap(j=>(j.lines||[]).map((l,i)=>{ const amount=Number(l.debit||0)||Number(l.credit||0); return {id:`${j.jeNumber}:${i}`,lineIndex:i,checked:false,jeReference:j.jeNumber,sourceModule:j.module,sourceReference:j.sourceRef||l.sourceReference||'',period:j.postPeriod||j.financialPeriod,account:l.account,accountName:accountLabel(l.account),accountTo,accountToName:accountTo?accountLabel(accountTo):'',debit:Number(l.debit||0),credit:Number(l.credit||0),amount,description:l.description||j.description||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'}; })).filter(r=>r.amount&&(!account||r.account===account));
+}
+function processReclassification({toPeriod,transactionDate,lines=[]}){
+  const pp=toPeriod||periodFromDate(transactionDate); validatePeriodOpen('GL',pp);
+  const selected=(lines||[]).filter(l=>l.checked!==false);
+  if(!selected.length) throw new Error('Select at least one line to process');
+  const groups=new Map();
+  for(const l of selected){
+    const key=l.originalId||l.id||`${l.jeReference}:${l.lineIndex}`; const amt=Number(l.amount||0); if(amt<=0) throw new Error('Split amount must be positive');
+    const accountTo=requireAccount(l.accountTo,'Account To');
+    const source=postedReclassCandidates({sourceJe:l.jeReference}).find(r=>r.id===key); if(!source) throw new Error(`Source line ${key} was not found`);
+    if(accountTo===source.account) throw new Error('Account To must be different from Original Account');
+    if(!groups.has(key)) groups.set(key,{source,splits:[]}); groups.get(key).splits.push({...l,amount:amt,accountTo});
+  }
+  const jeLines=[]; const auditTrail=[];
+  for(const [key,g] of groups){
+    const total=g.splits.reduce((t,l)=>t+Number(l.amount||0),0); if(Math.round((total-g.source.amount)*100)!==0) throw new Error(`Split total for ${g.source.jeReference} must equal original line amount ${g.source.amount}`);
+    for(const split of g.splits){
+      const isDebit=Number(g.source.debit||0)>0;
+      jeLines.push({account:g.source.account,debit:isDebit?0:split.amount,credit:isDebit?split.amount:0,sourceReference:g.source.sourceReference||g.source.jeReference,branch:g.source.branch,branchName:g.source.branchName,description:`Reclass from ${g.source.jeReference}`});
+      jeLines.push({account:split.accountTo,debit:isDebit?split.amount:0,credit:isDebit?0:split.amount,sourceReference:g.source.sourceReference||g.source.jeReference,branch:g.source.branch,branchName:g.source.branchName,description:`Reclass to ${split.accountTo}`});
+      auditTrail.push({sourceJe:g.source.jeReference,sourceLine:g.source.lineIndex,sourceReference:g.source.sourceReference,originalAccount:g.source.account,accountTo:split.accountTo,amount:split.amount,periodFrom:g.source.period,periodTo:pp});
+    }
+  }
+  const dr=jeLines.reduce((t,l)=>t+Number(l.debit||0),0), cr=jeLines.reduce((t,l)=>t+Number(l.credit||0),0); if(Math.round((dr-cr)*100)!==0) throw new Error('Reclassification debits and credits must balance');
+  const sourceRefs=[...new Set(auditTrail.map(a=>a.sourceJe))]; const jeNumber=createPostedJournal({module:'GL',description:`Reclassification of ${sourceRefs.join(', ')}`,postPeriod:pp,transactionDate:transactionDate||`${pp}-01`,sourceRef:sourceRefs[0]||'RECLASS',lines:jeLines,createdBy:'admin',reclassOf:sourceRefs.join(','),auditTrail});
+  for(const ref of sourceRefs){ const orig=journalEntries.find(j=>j.jeNumber===ref); if(orig){ orig.reclassifications=orig.reclassifications||[]; orig.reclassifications.push({jeNumber,createdDate:new Date().toISOString(),lines:auditTrail.filter(a=>a.sourceJe===ref)}); } }
+  return journalEntries.find(j=>j.jeNumber===jeNumber);
 }
 function sourceAccountFromLine(line,keys,defaultAccount){
   for(const key of keys){ if(line?.[key]) return line[key]; }
@@ -87,6 +123,36 @@ function changePeriodStatus(periodId,module,newStatus,action,notes=''){
   auditPeriod(periodId,module,action,prev,newStatus,notes); return serializePeriod(p);
 }
 
+
+const companyName=()=>process.env.COMPANY_NAME||'Company';
+function emailHistoryFor(invoiceId){ const h=invoiceEmailHistory.filter(x=>x.invoiceNumber===invoiceId).at(-1); return h?{lastSentDate:h.sentDate,emailStatus:h.emailStatus}:{}; }
+async function sendArInvoices({invoiceIds=[]},req){
+  requireAuthenticated(req);
+  const ids=[...new Set((invoiceIds||[]).map(String).filter(Boolean))]; const results=[];
+  if(!ids.length) throw new Error('Select at least one invoice to send');
+  const now=new Date().toISOString(); const sentBy='admin'; const failures=[]; const groups=new Map();
+  for(const id of ids){
+    const invoice=arDocuments.find(d=>d.id===id&&['Invoice','Credit Memo','Debit Memo'].includes(d.type));
+    if(!invoice){ failures.push({invoiceNumber:id,emailStatus:'Failed',errorMessage:`Invoice ${id} was not found`}); continue; }
+    const customer=customers.find(c=>c.id===invoice.customerId);
+    if(!customer?.email){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||customer?.name||'',customerEmail:'',sentDate:now,sentBy,emailStatus:'Failed',errorMessage:`Customer email is missing for invoice ${invoice.id}.`,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); continue; }
+    const key=customer.id||customer.email; if(!groups.has(key)) groups.set(key,{customer,email:customer.email,invoices:[]}); groups.get(key).invoices.push(invoice);
+  }
+  let sent=0;
+  for(const group of groups.values()){
+    const attachments=group.invoices.map(invoice=>({filename:`Invoice-${invoice.id}.pdf`,contentType:'application/pdf',content:generateInvoicePdf({invoice,customer:group.customer,companyName:companyName()})}));
+    const invoiceList=group.invoices.map(i=>i.id).join(', ');
+    const subject=group.invoices.length===1?`Invoice ${invoiceList} from ${companyName()}`:`Invoices ${invoiceList} from ${companyName()}`;
+    const bodyText=group.invoices.length===1?`Hello ${group.customer.name},\n\nPlease find attached invoice ${invoiceList}.\n\nThank you,\n${companyName()}`:`Hello ${group.customer.name},\n\nPlease find attached invoices ${invoiceList}.\n\nThank you,\n${companyName()}`;
+    try{
+      await sendInvoiceEmail({to:group.email,subject,body:bodyText,attachments});
+      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Sent',errorMessage:'',attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); sent++; }
+    }catch(e){
+      for(const invoice of group.invoices){ const row={invoiceNumber:invoice.id,customer:invoice.customerName||group.customer.name,customerEmail:group.email,sentDate:now,sentBy,emailStatus:'Failed',errorMessage:e.message,attachmentName:`Invoice-${invoice.id}.pdf`}; invoiceEmailHistory.push(row); results.push(row); failures.push(row); }
+    }
+  }
+  return {sent,failed:failures.length,message:`${sent} invoices sent successfully. ${failures.length} failed.`,results};
+}
 function normalizeArStatus(doc){
   if(!doc) return;
   const old=doc.status;
@@ -132,7 +198,7 @@ function apPostingLines(doc){
   const amt=Number(doc.amount||0);
   if(doc.type==='Payment') return [
     {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id},
-    {account:requireAccount(doc.cashAccount||POSTING_ACCOUNTS.apCash,'AP cash account'),debit:0,credit:amt,sourceReference:doc.id}
+    {account:requireAccount(String(doc.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],'AP cash account'),debit:0,credit:amt,sourceReference:doc.id}
   ];
   if(doc.type==='Credit Adjustment') return [
     {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id},
@@ -149,6 +215,25 @@ function apPostingLines(doc){
   lines.push({account:POSTING_ACCOUNTS.accountsPayable,debit:0,credit:amt,sourceReference:doc.id});
   return lines;
 }
+
+function syncApPaymentReview(doc){
+  if(!doc||doc.type!=='Payment') return doc;
+  const applied=(doc.applications||[]).reduce((t,a)=>t+Number(a.amount||a.amountPaid||0),0);
+  doc.appliedAmount=applied;
+  doc.unappliedBalance=Math.max(0,Number(doc.amount||0)-applied);
+  doc.balance=doc.unappliedBalance;
+  return doc;
+}
+function releaseApPaymentApplications(doc,appliedOn=new Date().toISOString().slice(0,10)){
+  if(!doc||doc.type!=='Payment') return;
+  const apps=(doc.applications||[]).map(a=>({documentId:a.documentId||a.billId,amount:Number(a.amount||a.amountPaid||0)})).filter(a=>a.documentId&&a.amount>0);
+  const total=apps.reduce((t,a)=>t+a.amount,0);
+  if(total>Number(doc.amount||0)) throw new Error('Applied amount cannot exceed payment amount');
+  for(const app of apps){ const b=apDocuments.find(d=>d.id===app.documentId&&['Bill','Credit Adjustment','Debit Adjustment'].includes(d.type)&&d.vendorId===doc.vendorId&&d.status!=='Voided'); if(!b) throw new Error(`Applied document ${app.documentId} is not available`); if(app.amount>Number(b.balance||0)) throw new Error(`Applied amount exceeds open balance for ${app.documentId}`); }
+  doc.history=doc.history||[];
+  doc.applications=apps.map(app=>{ const b=apDocuments.find(d=>d.id===app.documentId); b.balance=Number(b.balance||0)-app.amount; b.status=b.balance===0?'Closed':'Open'; const hist={reference:`APP-${String(applicationSeq++).padStart(6,'0')}`,appliedDocument:b.id,paymentReference:doc.id,date:appliedOn,amount:app.amount,reversalEntry:'',user:'system'}; doc.history.push(hist); return {billId:b.id,documentId:b.id,amount:app.amount,date:appliedOn,status:'Applied'}; });
+  syncApPaymentReview(doc);
+}
 function postApJE(doc,reverse=false){
   const postDate=doc.postDate||doc.date||new Date().toISOString().slice(0,10); const postPeriod=doc.postPeriod||periodFromDate(postDate); validatePeriodOpen('GL',postPeriod);
   let lines=apPostingLines(doc);
@@ -160,7 +245,7 @@ async function serve(p,res){ if(p==='/app.js'||p==='/styles.css'){const c=await 
 
 const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; try{
  if(method==='GET'&&await serve(pathname,res)) return;
- if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); return b.username==='admin'&&b.password==='admin'?json(res,200,{ok:true}):json(res,401,{error:'Invalid'});}
+ if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); if(b.username==='admin'&&b.password==='admin'){res.setHeader('Set-Cookie','erp_session=admin; HttpOnly; SameSite=Lax; Path=/'); return json(res,200,{ok:true});} return json(res,401,{error:'Invalid'});}
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers);
  if(method==='GET'&&pathname==='/api/ar/credit-terms') return json(res,200,creditTerms);
  if(method==='POST'&&pathname==='/api/ar/customers'){ const b=await body(req); if(!b.name) return json(res,400,{error:'Customer Name required'}); const next=`CUST-${String(customers.reduce((m,c)=>Math.max(m,Number(String(c.id||'').split('-')[1]||1000)),1000)+1).padStart(4,'0')}`; const id=b.id||next; if(customers.find(c=>c.id===id)) return json(res,400,{error:'Customer ID must be unique'}); const c={id,name:b.name,status:b.status||'Active',billingAddress:b.billingAddress||'',shippingAddress:b.shippingAddress||'',phone:b.phone||'',email:b.email||'',terms:b.terms||'NET30',taxZone:b.taxZone||'DEFAULT',currency:b.currency||'USD',contactPerson:b.contactPerson||''}; customers.push(c); return json(res,201,c); }
@@ -175,10 +260,10 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='DELETE'&&pathname.startsWith('/api/ap/vendors/')){ const id=pathname.split('/').pop(); if(apDocuments.some(d=>d.vendorId===id)) return json(res,400,{error:'This vendor has transactions and cannot be deleted. Please inactivate the vendor instead.'}); const i=vendors.findIndex(v=>v.id===id); if(i<0) return json(res,404,{error:'Vendor not found'}); vendors.splice(i,1); return json(res,200,{ok:true}); }
  if(method==='GET'&&pathname==='/api/ap/documents'){ let d=[...apDocuments]; if(query.type)d=d.filter(x=>x.type===query.type); if(query.vendorId)d=d.filter(x=>x.vendorId===query.vendorId); if(query.status)d=d.filter(x=>x.status===query.status); return json(res,200,d); }
  if(method==='GET'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); return d?json(res,200,d):json(res,404,{error:'Not found'}); }
- if(method==='POST'&&pathname==='/api/ap/documents'){ const b=await body(req); const vendor=vendors.find(v=>v.id===b.vendorId); if(!vendor) return json(res,400,{error:'Vendor required'}); const prefix=b.type==='Payment'?'PAY-AP':b.type==='Debit Adjustment'?'DADJ':'BILL'; const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('AP',pp); const id=`${prefix}-${String(apDocuments.length+1001).padStart(4,'0')}`; const d={id,type:b.type||'Bill',vendorId:vendor.id,vendorName:vendor.name,date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,dueDate:b.dueDate||b.date,terms:b.terms||vendor.terms,status:'Saved',posted:false,hold:!!b.hold,amount:Number(b.amount||0),balance:Number(b.amount||0),method:b.method,checkNumber:b.checkNumber,paymentRef:b.paymentRef||'',branch:b.branch||'MAIN',cashAccount:b.cashAccount||POSTING_ACCOUNTS.apCash,currency:b.currency||'USD',description:b.description||'',unappliedBalance:Number(b.amount||0),appliedAmount:0,applications:b.applications||[],history:b.history||[],lines:b.lines||[]}; apDocuments.push(d); return json(res,201,d); }
- if(method==='PUT'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); if(['Open','Closed','Voided'].includes(d.status)) return json(res,400,{error:'Cannot edit released docs'}); const b=await body(req); delete b.postPeriod; const nextPostDate=b.postDate||b.date||d.postDate||d.date; validatePeriodOpenForSave('AP',periodFromDate(nextPostDate)); Object.assign(d,b); d.postPeriod=periodFromDate(d.postDate||d.date); return json(res,200,d); }
+ if(method==='POST'&&pathname==='/api/ap/documents'){ const b=await body(req); const vendor=vendors.find(v=>v.id===b.vendorId); if(!vendor) return json(res,400,{error:'Vendor required'}); const prefix=b.type==='Payment'?'PAY-AP':b.type==='Debit Adjustment'?'DADJ':'BILL'; const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('AP',pp); const id=`${prefix}-${String(apDocuments.length+1001).padStart(4,'0')}`; const d={id,type:b.type||'Bill',vendorId:vendor.id,vendorName:vendor.name,date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,dueDate:b.dueDate||b.date,terms:b.terms||vendor.terms,status:'Saved',posted:false,hold:!!b.hold,amount:Number(b.amount||0),balance:Number(b.amount||0),method:b.method,checkNumber:b.checkNumber,paymentRef:b.paymentRef||'',branch:b.branch||'MAIN',cashAccount:String(b.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],currency:b.currency||'USD',description:b.description||'',unappliedBalance:Number(b.amount||0),appliedAmount:0,applications:b.applications||[],history:b.history||[],lines:b.lines||[]}; syncApPaymentReview(d); apDocuments.push(d); return json(res,201,d); }
+ if(method==='PUT'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); if(['Open','Closed','Voided'].includes(d.status)) return json(res,400,{error:'Cannot edit released docs'}); const b=await body(req); delete b.postPeriod; const nextPostDate=b.postDate||b.date||d.postDate||d.date; validatePeriodOpenForSave('AP',periodFromDate(nextPostDate)); Object.assign(d,b); d.postPeriod=periodFromDate(d.postDate||d.date); syncApPaymentReview(d); return json(res,200,d); }
  if(method==='DELETE'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const i=apDocuments.findIndex(x=>x.id===id); if(i<0) return json(res,404,{error:'Not found'}); if(['Open','Closed','Voided'].includes(apDocuments[i].status)) return json(res,400,{error:'Open/Closed documents cannot be deleted'}); apDocuments.splice(i,1); return json(res,200,{ok:true}); }
- if(method==='POST'&&pathname==='/api/ap/documents/post'){ const {id}=await body(req); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const pp=d.postPeriod||periodFromDate(d.postDate||d.date); validateSourceAndGlOpen('AP',pp); if(d.hold) return json(res,400,{error:'Document is on hold and cannot be released'}); if(d.status!=='Saved') return json(res,400,{error:'Only Saved transactions can be posted'}); postApJE(d,false); d.posted=true; d.status=(d.type==='Payment'&&Number(d.unappliedBalance||0)===0)?'Closed':'Open'; return json(res,200,d); }
+ if(method==='POST'&&pathname==='/api/ap/documents/post'){ const {id}=await body(req); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const pp=d.postPeriod||periodFromDate(d.postDate||d.date); validateSourceAndGlOpen('AP',pp); if(d.hold) return json(res,400,{error:'Document is on hold and cannot be released'}); if(d.status!=='Saved') return json(res,400,{error:'Only Saved transactions can be posted'}); if(d.type==='Payment') syncApPaymentReview(d); if(d.type==='Payment') releaseApPaymentApplications(d,d.postDate||d.date); postApJE(d,false); d.posted=true; d.status=(d.type==='Payment'&&Number(d.unappliedBalance||0)===0)?'Closed':'Open'; return json(res,200,d); }
  if(method==='POST'&&pathname==='/api/ap/documents/void'){ const {id,reversalDate}=await body(req); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const appliedOn=reversalDate||new Date().toISOString().slice(0,10); validateReversalSourceAndGlOpen('AP',periodFromDate(appliedOn)); if(!['Open','Closed'].includes(d.status)) return json(res,400,{error:'Only Open/Closed can be voided'}); const revJe=postApJE({...d,postDate:appliedOn,postPeriod:periodFromDate(appliedOn)},true); if(d.type==='Payment'){ for(const app of d.applications||[]){ const b=apDocuments.find(x=>x.id===(app.billId||app.documentId)); if(b&&b.status!=='Voided'){ b.balance=Number(b.balance||0)+Number(app.amount||0); b.status='Open'; }} d.history=d.history||[]; (d.applications||[]).forEach(a=>d.history.push({reference:`REV-${d.id}`,appliedDocument:a.billId||a.documentId,amount:-Number(a.amount||0),date:appliedOn,reversalEntry:revJe,user:'system'})); } d.status='Voided'; return json(res,200,{document:d,reversalJournalEntry:revJe}); }
  if(method==='POST'&&pathname==='/api/ap/payments/apply'){ const {paymentId,applications=[],applicationDate}=await body(req); const appliedOn=applicationDate||new Date().toISOString().slice(0,10); const p=apDocuments.find(x=>x.id===paymentId&&x.type==='Payment'); if(!p) return json(res,404,{error:'Payment not found'}); validatePeriodOpen('AP',periodFromDate(applicationDate||p.postDate||p.date)); let rem=Number(p.amount||0); p.applications=[]; p.history=p.history||[]; applications.forEach(a=>{const b=apDocuments.find(d=>d.id===a.documentId&&['Bill','Credit Adjustment','Debit Adjustment'].includes(d.type)&&d.vendorId===p.vendorId&&d.status!=='Voided'); const amt=Math.min(Number(a.amount||0),rem,Number(b?.balance||0)); if(b&&amt>0){b.balance-=amt; b.status=b.balance===0?'Closed':'Open'; rem-=amt; p.applications.push({billId:b.id,documentId:b.id,amount:amt,date:new Date().toISOString().slice(0,10),status:'Applied'}); p.history.push({reference:`APP-${String(applicationSeq++).padStart(6,'0')}`,appliedDocument:b.id,paymentReference:p.id,date:new Date().toISOString().slice(0,10),amount:amt,reversalEntry:'',user:'system'});}}); p.appliedAmount=Number(p.amount||0)-rem; p.unappliedBalance=rem; p.status=rem===0?'Closed':'Open'; return json(res,200,p); }
  if(method==='POST'&&pathname==='/api/ap/release/post-selected'){ const {ids=[]}=await body(req); const docs=ids.map(id=>apDocuments.find(x=>x.id===id)).filter(d=>d&&d.status==='Saved'); docs.forEach(d=>validateSourceAndGlOpen('AP',d.postPeriod||periodFromDate(d.postDate||d.date))); let posted=0; for(const d of docs){ d.posted=true; d.status=Number(d.balance||d.unappliedBalance||0)===0?'Closed':'Open'; posted++; } return json(res,200,{posted}); }
@@ -209,9 +294,11 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
 
  if(method==='GET'&&pathname==='/api/inventory/transactions') return json(res,200,inventoryTransactions);
  if(method==='POST'&&pathname==='/api/inventory/transactions'){ const b=await body(req); const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('Inventory',pp); const id=`IN-${String(inventoryTransactions.length+1001).padStart(4,'0')}`; const t={id,type:b.type||'Adjustment',date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,status:'Saved',description:b.description||'',lines:b.lines||[]}; inventoryTransactions.push(t); return json(res,201,t); }
- if(method==='POST'&&pathname==='/api/inventory/transactions/post'){ const {id}=await body(req); const t=inventoryTransactions.find(x=>x.id===id); if(!t) return json(res,404,{error:'Inventory transaction not found'}); validatePeriodOpen('Inventory',t.postPeriod||periodFromDate(t.postDate||t.date)); if(t.status!=='Saved') return json(res,400,{error:'Only Saved inventory transactions can be posted'}); t.status='Released'; return json(res,200,t); }
+ if(method==='POST'&&pathname==='/api/inventory/transactions/post'){ const {id}=await body(req); const t=inventoryTransactions.find(x=>x.id===id); if(!t) return json(res,404,{error:'Inventory transaction not found'}); const pp=t.postPeriod||periodFromDate(t.postDate||t.date); validateSourceAndGlOpen('Inventory',pp); if(t.status!=='Saved') return json(res,400,{error:'Only Saved inventory transactions can be posted'}); const postingLines=(t.lines||[]).filter(l=>l.account&&(Number(l.debit||0)||Number(l.credit||0))); if(postingLines.length) t.jeNumber=createPostedJournal({module:'Inventory',description:`Inventory posting ${t.id}`,postPeriod:pp,transactionDate:t.postDate||t.date,sourceRef:t.id,lines:postingLines}); t.status='Released'; return json(res,200,t); }
  if(method==='GET'&&pathname==='/api/inventory/items') return json(res,200,itemMaster);
 
+ if(method==='GET'&&pathname==='/api/ar/invoices/send-history'){ return json(res,200,invoiceEmailHistory); }
+ if(method==='POST'&&pathname==='/api/ar/invoices/send'){ if(!isAuthenticated(req)) return json(res,401,{error:'Authentication required'}); const result=await sendArInvoices(await body(req),req); return json(res,200,result); }
  if(method==='GET'&&pathname==='/api/ar/open-invoices'){ normalizeAllArStatuses(); const cid=query.customerId; const data=arDocuments.filter(d=>d.type==='Invoice'&&d.customerId===cid&&d.balance>0&&d.status!=='Voided'&&d.status!=='Closed'); return json(res,200,data); }
  if(method==='GET'&&pathname==='/api/ar/documents'){ normalizeAllArStatuses(); let data=[...arDocuments]; if(query.type)data=data.filter(d=>d.type===query.type); if(query.customerId)data=data.filter(d=>d.customerId===query.customerId); if(query.status)data=data.filter(d=>d.status===query.status); return json(res,200,data); }
  if(method==='GET'&&pathname.startsWith('/api/ar/documents/')){const id=pathname.split('/').pop(); const d=arDocuments.find(x=>x.id===id); normalizeArStatus(d); return d?json(res,200,d):json(res,404,{error:'Not found'});}
@@ -278,6 +365,8 @@ if(method==='POST'&&pathname==='/api/ar/documents/post'){ const {id}=await body(
 
 
  if(method==='GET'&&pathname==='/api/ar/payment-applications'){ let data=[...paymentApplications]; if(query.paymentId) data=data.filter(x=>x.paymentId===query.paymentId); if(query.invoiceId) data=data.filter(x=>x.appliedDocumentId===query.invoiceId); return json(res,200,data); }
+ if(method==='GET'&&pathname==='/api/finance/reclassify/search'){ return json(res,200,postedReclassCandidates(query)); }
+ if(method==='POST'&&pathname==='/api/finance/reclassify/process'){ const je=processReclassification(await body(req)); return json(res,201,je); }
  if(method==='GET'&&pathname==='/api/finance/journal-transactions'){ return json(res,200,journalEntries); }
  if(method==='GET'&&pathname.startsWith('/api/finance/journal-transactions/')){ const id=pathname.split('/').pop(); const je=journalEntries.find(j=>j.jeNumber===id); return je?json(res,200,je):json(res,404,{error:'JE not found'}); }
  if(method==='POST'&&pathname==='/api/finance/journal-transactions'){ const b=await body(req); const lines=b.lines||[]; const dr=lines.reduce((s,l)=>s+Number(l.debit||0),0); const cr=lines.reduce((s,l)=>s+Number(l.credit||0),0); if(dr!==cr) return json(res,400,{error:'Total debits must equal total credits'}); const postDate=b.postDate||b.transactionDate||new Date().toISOString().slice(0,10); const pp=periodFromDate(postDate); validatePeriodOpenForSave('GL',pp); const je={jeNumber:`JE${String(journalEntries.length+1).padStart(6,'0')}`,batchNumber:`BATCH-${String(journalEntries.length+1).padStart(6,'0')}`,module:'GL',description:b.description||'',financialPeriod:pp,postPeriod:pp,transactionDate:postDate,status:'Saved',sourceRef:b.sourceRef||'',createdBy:'admin',createdDate:new Date().toISOString(),lines:lines.map(l=>{ const account=requireAccount(l.account,'Journal line account'); return {branch:l.branch||'100',branchName:(branchMaster.find(b=>b.code===String(l.branch||'100'))?.name)||'Custom Branch',account,debit:Number(l.debit||0),credit:Number(l.credit||0),sourceReference:l.sourceReference||''}; })}; journalEntries.push(je); return json(res,201,je); }
