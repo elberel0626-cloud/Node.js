@@ -6,10 +6,11 @@ export const creditTerms = [
 ];
 
 export const customers = [
-  { id: 'CUST-1001', name: 'ABC Industries', terms: 'NET30', status: 'Active' },
-  { id: 'CUST-1002', name: 'Global Tech Solutions', terms: 'NET15', status: 'Active' },
-  { id: 'CUST-1003', name: 'Midwest Distribution', terms: 'DUE', status: 'Active' },
-  { id: 'CUST-1004', name: 'Northern Supply Co', terms: 'NET45', status: 'Active' }
+  { id: 'CUST-1001', name: 'ABC Industries', terms: 'NET30', status: 'Active', billingAddress: '100 Industrial Way, Chicago, IL', shippingAddress: '100 Industrial Way, Chicago, IL', taxZone: 'IL-CHICAGO', creditLimit: 50000, creditHold: false, openArBalance: 7500, currency: 'USD' },
+  { id: 'CUST-1002', name: 'Midwest Distribution', terms: 'NET15', status: 'Active', billingAddress: '200 Distribution Dr, Milwaukee, WI', shippingAddress: 'Dock 4, 200 Distribution Dr, Milwaukee, WI', taxZone: 'WI', creditLimit: 25000, creditHold: false, openArBalance: 0, currency: 'USD' },
+  { id: 'CUST-1003', name: 'Chicago Screen Print', terms: 'DUE', status: 'On Hold', billingAddress: '310 Screen Ave, Chicago, IL', shippingAddress: '310 Screen Ave, Chicago, IL', taxZone: 'IL-CHICAGO', creditLimit: 1000, creditHold: true, openArBalance: 2400, currency: 'USD' },
+  { id: 'CUST-1004', name: 'Lakeside Apparel', terms: 'NET45', status: 'Active', billingAddress: '42 Lake St, Evanston, IL', shippingAddress: '42 Lake St, Evanston, IL', taxZone: 'IL', creditLimit: 20000, creditHold: false, openArBalance: 0, currency: 'USD' },
+  { id: 'CUST-1005', name: 'North Star Graphics', terms: 'NET30', status: 'Active', billingAddress: '80 North Star Rd, Minneapolis, MN', shippingAddress: '80 North Star Rd, Minneapolis, MN', taxZone: 'MN', creditLimit: 15000, creditHold: false, openArBalance: 0, currency: 'USD' }
 ];
 
 import { chartOfAccountsSeed } from './chartOfAccountsSeed.js';
@@ -29,17 +30,26 @@ export const arDocuments = [
   { id: 'PAY-1003', type: 'Payment', customerId: 'CUST-1003', customerName: 'Midwest Distribution', method: 'Credit Card', amount: 2500, status: 'Posted', posted: true, createdDate: '2026-05-09', applications:[{invoiceId:'INV-1003',amount:2500}] }
 ];
 
+
+if (!arDocuments.some(d => d.id === 'INV-SO-1002')) {
+  arDocuments.push({
+    id: 'INV-SO-1002', type: 'Invoice', customerId: 'CUST-1002', customerName: 'Midwest Distribution', date: '2026-05-14', postDate: '2026-05-14', postPeriod: '2026-05', dueDate: '2026-05-29', terms: 'NET15', amount: 450, balance: 450, status: 'Open', posted: true, createdDate: '2026-05-14',
+    sourceSalesOrderId: 'SO-1002', sourceSalesOrderNumber: 'SO-1002', sourceShipmentId: 'SHIP-1001', customerPO: 'PO-MWD-512', salesOrderReference: 'SO-1002', shipmentNumber: 'SHIP-1001',
+    lines: [{ itemCode: 'ITEM-1003', item: 'ITEM-1003', description: 'LED Panel 4ft', qty: 10, unitPrice: 45, lineTotal: 450, revenueAccount: '4008', sourceSalesOrderLineId: 'SOL-1002-1' }], applications: []
+  });
+}
+
 export const journalEntries = [];
 
 
 export const itemMaster = [
-  { code:'ITEM-1001', name:'Industrial Printer Ink Black', type:'Inventory', uom:'Each', salesPrice:120, cost:80, taxable:true, status:'Active' },
-  { code:'ITEM-1002', name:'Industrial Printer Ink Cyan', type:'Inventory', uom:'Each', salesPrice:120, cost:80, taxable:true, status:'Active' },
-  { code:'ITEM-1003', name:'LED Panel 4ft', type:'Inventory', uom:'Each', salesPrice:45, cost:30, taxable:true, status:'Active' },
-  { code:'ITEM-1004', name:'Mounting Bracket Kit', type:'Inventory', uom:'Each', salesPrice:18, cost:10, taxable:true, status:'Active' },
-  { code:'ITEM-1005', name:'Maintenance Service Hour', type:'Service', uom:'Hour', salesPrice:95, cost:40, taxable:false, status:'Active' },
-  { code:'ITEM-1006', name:'Shipping Fee', type:'Non-Inventory', uom:'Each', salesPrice:25, cost:25, taxable:false, status:'Active' },
-  { code:'ITEM-1007', name:'Printer Head Replacement', type:'Inventory', uom:'Each', salesPrice:650, cost:420, taxable:true, status:'Active' }
+  { code:'ITEM-1001', name:'Industrial Printer Ink Black', description:'Industrial Printer Ink Black', type:'Inventory', uom:'EA', salesPrice:120, cost:80, taxable:true, status:'Active', revenueAccount:'4008', inventoryAccount:'1507', cogsAccount:'5110', qtyOnHand:100, qtyAllocated:14 },
+  { code:'ITEM-1002', name:'Industrial Printer Ink Cyan', description:'Industrial Printer Ink Cyan', type:'Inventory', uom:'EA', salesPrice:120, cost:80, taxable:true, status:'Active', revenueAccount:'4008', inventoryAccount:'1507', cogsAccount:'5110', qtyOnHand:100, qtyAllocated:16 },
+  { code:'ITEM-1003', name:'LED Panel 4ft', description:'LED Panel 4ft', type:'Inventory', uom:'EA', salesPrice:45, cost:30, taxable:true, status:'Active', revenueAccount:'4008', inventoryAccount:'1507', cogsAccount:'5110', qtyOnHand:50, qtyAllocated:20 },
+  { code:'ITEM-1004', name:'Mounting Bracket Kit', description:'Mounting Bracket Kit', type:'Inventory', uom:'EA', salesPrice:18, cost:10, taxable:true, status:'Active', revenueAccount:'4008', inventoryAccount:'1507', cogsAccount:'5110', qtyOnHand:200, qtyAllocated:15 },
+  { code:'ITEM-1005', name:'Maintenance Service Hour', description:'Maintenance Service Hour', type:'Service', uom:'HR', salesPrice:95, cost:40, taxable:false, status:'Active', revenueAccount:'4020', cogsAccount:'5160', invoiceWithoutShipment:true },
+  { code:'ITEM-1006', name:'Shipping Fee', description:'Shipping Fee', type:'Non-Inventory', uom:'EA', salesPrice:25, cost:25, taxable:false, status:'Active', revenueAccount:'4045' },
+  { code:'ITEM-1007', name:'Printer Head Replacement', description:'Printer Head Replacement', type:'Inventory', uom:'EA', salesPrice:650, cost:420, taxable:true, status:'Active', revenueAccount:'4008', inventoryAccount:'1507', cogsAccount:'5110', qtyOnHand:2, qtyAllocated:2 }
 ];
 
 export const branchMaster = [
@@ -56,4 +66,51 @@ export const vendors = [
 export const apDocuments = [
   {id:'BILL-1001',type:'Bill',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-10',dueDate:'2026-06-09',terms:'NET30',amount:2500,balance:2500,status:'Saved',posted:false,lines:[]},
   {id:'PAY-AP-1001',type:'Payment',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-15',method:'Check',checkNumber:'9001',amount:1000,unappliedBalance:1000,status:'Saved',posted:false,applications:[]}
+];
+
+
+export const salesOrders = [
+  { id:'SO-1001', orderType:'SO', orderNumber:'SO-1001', status:'Open', orderDate:'2026-05-10', requestedShipDate:'2026-05-17', postDate:'2026-05-10', postPeriod:'2026-05', customerPO:'PO-ABC-510', description:'Ink and bracket order', customerId:'CUST-1001', customerName:'ABC Industries', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET30', dueDate:'2026-06-09', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1290, discountTotal:0, taxTotal:0, orderTotal:1290, openBalance:1290, invoicedAmount:0, shippedAmount:0, shippingInstructions:'Ship complete when allocated.', internalComments:'Sample open SO.', notes:'Customer PO attached.', attachments:[{name:'PO-ABC-510.pdf',type:'Customer PO'}] },
+  { id:'SO-1002', orderType:'SO', orderNumber:'SO-1002', status:'Partially Shipped', orderDate:'2026-05-12', requestedShipDate:'2026-05-14', postDate:'2026-05-12', postPeriod:'2026-05', customerPO:'PO-MWD-512', description:'Panels and service', customerId:'CUST-1002', customerName:'Midwest Distribution', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET15', dueDate:'2026-05-27', shipVia:'FedEx', fobPoint:'Origin', freight:0, lineTotal:1280, discountTotal:0, taxTotal:0, orderTotal:1280, openBalance:830, invoicedAmount:450, shippedAmount:450, shippingInstructions:'Partial shipment allowed.', internalComments:'Shipment SHIP-1001 confirmed.', notes:'' },
+  { id:'SO-1003', orderType:'SO', orderNumber:'SO-1003', status:'Credit Hold', orderDate:'2026-05-15', requestedShipDate:'2026-05-22', postDate:'2026-05-15', postPeriod:'2026-05', customerPO:'PO-CSP-515', description:'Replacement head and shipping', customerId:'CUST-1003', customerName:'Chicago Screen Print', branch:'100', warehouse:'MAIN', currency:'USD', terms:'DUE', dueDate:'2026-05-15', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1325, discountTotal:0, taxTotal:0, orderTotal:1325, openBalance:1325, invoicedAmount:0, shippedAmount:0, creditWarning:'Customer exceeds credit limit. Order placed on credit hold.', shippingInstructions:'Do not ship until credit released.', internalComments:'Customer on hold.', notes:'' },
+  { id:'SO-1004', orderType:'SO', orderNumber:'SO-1004', status:'Open', orderDate:'2026-05-18', requestedShipDate:'2026-05-25', postDate:'2026-05-18', postPeriod:'2026-05', customerPO:'PO-LAKE-518', description:'Cyan ink and service', customerId:'CUST-1004', customerName:'Lakeside Apparel', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET45', dueDate:'2026-07-02', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1630, discountTotal:0, taxTotal:0, orderTotal:1630, openBalance:1630, invoicedAmount:0, shippedAmount:0, shippingInstructions:'Call before delivery.', internalComments:'', notes:'' },
+  { id:'SO-1005', orderType:'SO', orderNumber:'SO-1005', status:'Saved', orderDate:'2026-05-20', requestedShipDate:'2026-05-27', postDate:'2026-05-20', postPeriod:'2026-05', customerPO:'PO-NSG-520', description:'Saved ink order', customerId:'CUST-1005', customerName:'North Star Graphics', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET30', dueDate:'2026-06-19', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1140, discountTotal:0, taxTotal:0, orderTotal:1140, openBalance:1140, invoicedAmount:0, shippedAmount:0, shippingInstructions:'', internalComments:'Awaiting confirmation.', notes:'' }
+];
+
+export const salesOrderLines = [
+  { id:'SOL-1001-1', salesOrderId:'SO-1001', lineNumber:1, branch:'100', warehouse:'MAIN', itemId:'ITEM-1001', inventoryId:'ITEM-1001', description:'Industrial Printer Ink Black', qtyOrdered:10, qtyAllocated:10, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:120, discountPct:0, discountAmount:0, tax:0, extendedPrice:1200, lineTotal:1200, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Open' },
+  { id:'SOL-1001-2', salesOrderId:'SO-1001', lineNumber:2, branch:'100', warehouse:'MAIN', itemId:'ITEM-1004', inventoryId:'ITEM-1004', description:'Mounting Bracket Kit', qtyOrdered:5, qtyAllocated:5, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:18, discountPct:0, discountAmount:0, tax:0, extendedPrice:90, lineTotal:90, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Open' },
+  { id:'SOL-1002-1', salesOrderId:'SO-1002', lineNumber:1, branch:'100', warehouse:'MAIN', itemId:'ITEM-1003', inventoryId:'ITEM-1003', description:'LED Panel 4ft', qtyOrdered:20, qtyAllocated:20, qtyShipped:10, qtyInvoiced:10, qtyBackordered:0, uom:'EA', unitPrice:45, discountPct:0, discountAmount:0, tax:0, extendedPrice:900, lineTotal:900, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Partially Shipped' },
+  { id:'SOL-1002-2', salesOrderId:'SO-1002', lineNumber:2, branch:'100', warehouse:'MAIN', itemId:'ITEM-1005', inventoryId:'ITEM-1005', description:'Maintenance Service Hour', qtyOrdered:4, qtyAllocated:0, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'HR', unitPrice:95, discountPct:0, discountAmount:0, tax:0, extendedPrice:380, lineTotal:380, revenueAccount:'4020', cogsAccount:'5160', inventoryAccount:'', status:'Open' },
+  { id:'SOL-1003-1', salesOrderId:'SO-1003', lineNumber:1, branch:'100', warehouse:'MAIN', itemId:'ITEM-1007', inventoryId:'ITEM-1007', description:'Printer Head Replacement', qtyOrdered:2, qtyAllocated:2, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:650, discountPct:0, discountAmount:0, tax:0, extendedPrice:1300, lineTotal:1300, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Credit Hold' },
+  { id:'SOL-1003-2', salesOrderId:'SO-1003', lineNumber:2, branch:'100', warehouse:'MAIN', itemId:'ITEM-1006', inventoryId:'ITEM-1006', description:'Shipping Fee', qtyOrdered:1, qtyAllocated:0, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:25, discountPct:0, discountAmount:0, tax:0, extendedPrice:25, lineTotal:25, revenueAccount:'4045', cogsAccount:'', inventoryAccount:'', status:'Credit Hold' },
+  { id:'SOL-1004-1', salesOrderId:'SO-1004', lineNumber:1, branch:'100', warehouse:'MAIN', itemId:'ITEM-1002', inventoryId:'ITEM-1002', description:'Industrial Printer Ink Cyan', qtyOrdered:12, qtyAllocated:12, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:120, discountPct:0, discountAmount:0, tax:0, extendedPrice:1440, lineTotal:1440, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Open' },
+  { id:'SOL-1004-2', salesOrderId:'SO-1004', lineNumber:2, branch:'100', warehouse:'MAIN', itemId:'ITEM-1005', inventoryId:'ITEM-1005', description:'Maintenance Service Hour', qtyOrdered:2, qtyAllocated:0, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'HR', unitPrice:95, discountPct:0, discountAmount:0, tax:0, extendedPrice:190, lineTotal:190, revenueAccount:'4020', cogsAccount:'5160', inventoryAccount:'', status:'Open' },
+  { id:'SOL-1005-1', salesOrderId:'SO-1005', lineNumber:1, branch:'100', warehouse:'MAIN', itemId:'ITEM-1001', inventoryId:'ITEM-1001', description:'Industrial Printer Ink Black', qtyOrdered:4, qtyAllocated:4, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:120, discountPct:0, discountAmount:0, tax:0, extendedPrice:480, lineTotal:480, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Saved' },
+  { id:'SOL-1005-2', salesOrderId:'SO-1005', lineNumber:2, branch:'100', warehouse:'MAIN', itemId:'ITEM-1002', inventoryId:'ITEM-1002', description:'Industrial Printer Ink Cyan', qtyOrdered:4, qtyAllocated:4, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:120, discountPct:0, discountAmount:0, tax:0, extendedPrice:480, lineTotal:480, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Saved' },
+  { id:'SOL-1005-3', salesOrderId:'SO-1005', lineNumber:3, branch:'100', warehouse:'MAIN', itemId:'ITEM-1004', inventoryId:'ITEM-1004', description:'Mounting Bracket Kit', qtyOrdered:10, qtyAllocated:10, qtyShipped:0, qtyInvoiced:0, qtyBackordered:0, uom:'EA', unitPrice:18, discountPct:0, discountAmount:0, tax:0, extendedPrice:180, lineTotal:180, revenueAccount:'4008', cogsAccount:'5110', inventoryAccount:'1507', status:'Saved' }
+];
+
+export const shipments = [
+  { id:'SHIP-1001', shipmentNumber:'SHIP-1001', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', customerId:'CUST-1002', customerName:'Midwest Distribution', shipDate:'2026-05-14', warehouse:'MAIN', shipVia:'FedEx', trackingNumber:'1ZSO1002', status:'Confirmed', freightAmount:0, jeNumber:'' }
+];
+
+export const shipmentLines = [
+  { id:'SHL-1001-1', shipmentId:'SHIP-1001', salesOrderId:'SO-1002', salesOrderLineId:'SOL-1002-1', itemId:'ITEM-1003', inventoryId:'ITEM-1003', description:'LED Panel 4ft', orderedQty:20, shippedQty:10, backorderQty:10, uom:'EA', warehouse:'MAIN', location:'A1' }
+];
+
+export const salesOrderInvoices = [
+  { id:'SOI-1002-1', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', shipmentId:'SHIP-1001', invoiceId:'INV-SO-1002', invoiceNumber:'INV-SO-1002', invoiceDate:'2026-05-14', invoiceAmount:450, openBalance:450, status:'Open', arReference:'INV-SO-1002' }
+];
+
+export const inventoryAllocations = [
+  { id:'ALLOC-1001', salesOrderId:'SO-1001', salesOrderLineId:'SOL-1001-1', itemId:'ITEM-1001', warehouse:'MAIN', qtyAvailable:86, qtyAllocated:10, qtyBackordered:0, status:'Allocated' },
+  { id:'ALLOC-1002', salesOrderId:'SO-1001', salesOrderLineId:'SOL-1001-2', itemId:'ITEM-1004', warehouse:'MAIN', qtyAvailable:185, qtyAllocated:5, qtyBackordered:0, status:'Allocated' },
+  { id:'ALLOC-1003', salesOrderId:'SO-1002', salesOrderLineId:'SOL-1002-1', itemId:'ITEM-1003', warehouse:'MAIN', qtyAvailable:30, qtyAllocated:20, qtyBackordered:0, status:'Allocated' }
+];
+
+export const salesOrderStatusHistory = [
+  { id:'SOH-1001', salesOrderId:'SO-1001', date:'2026-05-10T09:00:00.000Z', user:'admin', oldStatus:'Draft', newStatus:'Open', action:'Confirm', note:'Order confirmed and inventory allocated.' },
+  { id:'SOH-1002', salesOrderId:'SO-1002', date:'2026-05-14T10:15:00.000Z', user:'admin', oldStatus:'Open', newStatus:'Partially Shipped', action:'Confirm Shipment', note:'SHIP-1001 confirmed.' },
+  { id:'SOH-1003', salesOrderId:'SO-1003', date:'2026-05-15T11:00:00.000Z', user:'admin', oldStatus:'Draft', newStatus:'Credit Hold', action:'Credit Check', note:'Customer exceeds credit limit. Order placed on credit hold.' }
 ];
