@@ -98,3 +98,20 @@ label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
 .erp-dialog.error .erp-dialog-icon{background:#c62828}
 .erp-error-details{width:100%;min-height:140px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;white-space:pre-wrap}
 @media (max-width:640px){.erp-dialog{width:calc(100vw - 20px);max-height:86vh}.erp-dialog .cn-list{padding:10px}.erp-dialog .cn-foot{justify-content:stretch}.erp-dialog .cn-foot button{width:100%}.erp-header-grid{grid-template-columns:1fr}}
+
+/* Sales Orders module */
+.so-screen{font-size:12px;color:#1f2d3d}
+.so-toolbar{display:flex;flex-wrap:wrap;gap:4px;background:#e8edf5;border:1px solid #b8c4d5;padding:5px;align-items:center}
+.so-toolbar button,.so-toolbar select{border:1px solid #9fb0c6;background:#fff;color:#12365f;border-radius:2px;padding:4px 8px;font-size:12px}
+.so-toolbar button:disabled{background:#eef1f5;color:#94a3b8}
+.so-header{grid-template-columns:repeat(3,minmax(220px,1fr));background:#f6f8fb;border:1px solid #c6d2e0;padding:10px;gap:8px 14px}
+.so-header label{font-size:12px;color:#344054}
+.so-header input{height:27px;border:1px solid #b9c6d6;border-radius:2px;padding:3px 6px;background:#fff}
+.so-line-grid{width:100%;border-collapse:collapse;background:#fff;white-space:nowrap;font-size:12px}
+.so-line-grid th{background:#dfe7f2;border:1px solid #b8c4d5;color:#223047;padding:5px 7px;text-align:left;font-weight:600}
+.so-line-grid td{border:1px solid #c9d3df;padding:3px 5px;vertical-align:middle}
+.so-line-grid input{width:110px;height:24px;border:1px solid #c3cedc;border-radius:2px;padding:2px 5px}
+.so-line-grid .sl-desc{width:210px}.so-line-grid .sl-qty,.so-line-grid .sl-price,.so-line-grid .sl-discp,.so-line-grid .sl-tax{width:80px}.so-line-grid .sl-alloc,.so-line-grid .sl-ship,.so-line-grid .sl-inv,.so-line-grid .sl-back{width:70px}
+.so-status{display:inline-block;border:1px solid #aebbd0;border-radius:999px;padding:2px 8px;font-weight:700;font-size:11px;background:#f5f7fb;color:#344054}
+.so-open{background:#e9f7ef;color:#17633a;border-color:#a8d5ba}.so-credit-hold,.so-on-hold{background:#fff4e5;color:#9a5700;border-color:#f3c17a}.so-cancelled,.so-voided{background:#fdecec;color:#9f1d1d;border-color:#efb0b0}.so-closed,.so-invoiced{background:#eef2ff;color:#3442a5;border-color:#b8c1ff}.so-partially-shipped,.so-partially-invoiced{background:#eaf5ff;color:#155a8a;border-color:#a9d3f5}.so-saved,.so-draft{background:#f3f4f6;color:#4b5563}
+.so-warning{background:#fff4e5;border:1px solid #f3c17a;color:#8a4b00;border-radius:4px;padding:8px 10px;margin-bottom:8px;font-weight:700}.muted{color:#536273}.kpi .big{font-size:32px;font-weight:800;color:#173b66}
