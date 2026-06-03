@@ -67,7 +67,7 @@ export const vendors = [
   {id:'VEND-1002',name:'Prime Industrial',status:'Active',address:'200 Lake',phone:'555-1002',email:'ap@prime.com',terms:'NET15',taxId:'TIN1002',currency:'USD',paymentMethod:'ACH/Wire'}
 ];
 export const apDocuments = [
-  {id:'BILL-1001',type:'Bill',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-10',dueDate:'2026-06-09',terms:'NET30',amount:2500,balance:2500,status:'Saved',posted:false,lines:[]},
+  {id:'BILL-1001',type:'Bill',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-10',postDate:'2026-05-10',postPeriod:'2026-05',dueDate:'2026-06-09',terms:'NET30',vendorRef:'INV-NS-1001',invoiceNumber:'INV-NS-1001',amount:2500,balance:2500,status:'Saved',posted:false,createdBy:'ap.clerk',department:'Finance',invoicePdfAttached:true,attachmentName:'INV-NS-1001.pdf',approvals:[],lines:[{description:'Office supplies invoice',qty:1,unitCost:2500,extendedCost:2500,amount:2500,expenseAccount:'5110',branch:'100'}]},
   {id:'PAY-AP-1001',type:'Payment',vendorId:'VEND-1001',vendorName:'North Supply',date:'2026-05-15',method:'Check',checkNumber:'9001',amount:1000,unappliedBalance:1000,status:'Saved',posted:false,applications:[]}
 ];
 
