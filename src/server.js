@@ -5,10 +5,11 @@ import path from 'node:path';
 import { generateInvoicePdf } from './invoicePdf.js';
 import { formatSmtpError, resolveSmtpSettings, sendInvoiceEmail, validateSmtpSettings } from './emailService.js';
 import { apDocuments, arDocuments, branchMaster, creditTerms, customers, glAccounts, itemMaster, journalEntries, vendors, salesOrders, salesOrderLines, shipments, shipmentLines, salesOrderInvoices, inventoryAllocations, salesOrderStatusHistory } from './data/seed.js';
-import { calculateTax, customerExemptions, importTaxRates, internalTaxProvider, taxCategories, taxHistory, taxJurisdictions, taxPaidByCustomer, taxRates, taxZones } from './taxEngine.js';
+import { calculateTax, copyTaxZoneVersion, customerExemptions, importTaxRates, inactivateTaxZoneVersion, internalTaxProvider, listTaxZoneVersions, saveTaxCategory, saveTaxZoneVersion, taxCategories, taxHistory, taxJurisdictions, taxPaidByCustomer, taxRates, taxZones } from './taxEngine.js';
 
 const publicDir = path.resolve('public');
 const paymentApplications = [];
+const taxRemittances = [];
 const TAX_LIABILITY_ACCOUNT = '2621';
 const inventoryTransactions = [];
 const warehouses = [
@@ -294,6 +295,8 @@ function applyTaxToArDocument(doc, customer = customers.find(c => c.id === doc.c
   const taxCalc = calculateTax(doc, { customer, items: itemMaster });
   doc.taxZone = taxCalc.taxZone;
   doc.taxRateId = taxCalc.taxRate?.taxId || '';
+  doc.taxRateEffectiveDate = taxCalc.taxRate?.effectiveDate || '';
+  doc.taxRateSnapshot = taxCalc.taxRate ? { ...taxCalc.taxRate } : null;
   doc.taxDetail = taxCalc.taxDetail;
   doc.taxSummary = taxCalc.taxSummary;
   doc.exemptionReason = taxCalc.exemptionReason;
@@ -316,19 +319,22 @@ function validateTaxBeforePosting(doc) {
   return true;
 }
 function salesTaxReport(filters = {}) {
+  const dateBasis = filters.dateBasis || 'invoiceDate';
+  const docDate = d => dateBasis === 'postDate' ? (d.postDate || d.date || d.createdDate) : (d.date || d.postDate || d.createdDate);
   const from = filters.dateFrom || filters.from || '0000-01-01';
   const to = filters.dateTo || filters.to || '9999-12-31';
   const detail = arDocuments.filter(d => ['Invoice','Credit Memo'].includes(d.type) && d.status !== 'Voided')
-    .filter(d => (d.postDate || d.date || d.createdDate) >= from && (d.postDate || d.date || d.createdDate) <= to)
-    .filter(d => !filters.state || (d.taxRate?.state || d.taxDetail?.state || taxZones.find(z => z.taxZoneId === d.taxZone)?.state) === filters.state)
+    .filter(d => docDate(d) >= from && docDate(d) <= to)
+    .filter(d => !filters.postPeriod || (d.postPeriod || periodFromDate(d.postDate || d.date)) === filters.postPeriod)
+    .filter(d => !filters.state || (d.taxRateSnapshot?.state || taxZones.find(z => z.taxId === d.taxRateId)?.state || taxZones.find(z => z.taxZoneId === d.taxZone)?.state) === filters.state)
     .filter(d => !filters.taxZone || d.taxZone === filters.taxZone)
     .filter(d => !filters.customerId || d.customerId === filters.customerId)
     .map(d => {
-      const apps = paymentApplications.filter(a => a.appliedDocumentId === d.id && a.status === 'Applied').reduce((s,a)=>s+Number(a.cashApplied ?? a.appliedAmount ?? 0),0);
-      const zone = taxZones.find(z => z.taxZoneId === d.taxZone) || {};
+      const apps = paymentApplications.filter(a => a.appliedDocumentId === d.id && a.status === 'Applied').reduce((sum,a)=>sum+Number(a.cashApplied ?? a.appliedAmount ?? 0),0);
+      const zone = d.taxRateSnapshot || taxZones.find(z => z.taxId === d.taxRateId) || taxZones.find(z => z.taxZoneId === d.taxZone) || {};
       const sign = d.type === 'Credit Memo' ? -1 : 1;
       const td = d.taxDetail || {};
-      return { invoiceNumber:d.id, customer:d.customerName, taxZone:d.taxZone, taxCategory:[...(new Set((d.lines||[]).map(l=>l.taxCategory||'TAXABLE')))].join(', '), taxableAmount:sign*Number(d.taxableTotal||d.taxSummary?.taxableTotal||0), exemptAmount:sign*Number(d.exemptTotal||d.taxSummary?.exemptTotal||0), stateTax:sign*Number(td.stateTaxAmount||0), countyTax:sign*Number(td.countyTaxAmount||0), cityTax:sign*Number(td.cityTaxAmount||0), spdTax:sign*Number(td.spdTaxAmount||0), otherLocalTax:sign*Number(td.otherLocalTaxAmount||0), totalTax:sign*Number(d.taxTotal||td.totalTaxAmount||0), invoiceStatus:d.status, paymentStatus:Number(d.balance||0)===0?'Paid':'Open', state:zone.state||'', county:zone.county||'', city:zone.city||'', zip:zone.zip||'', taxPaidByCustomer:sign*taxPaidByCustomer(d, apps), taxPayable:sign*(Number(d.taxTotal||0)-taxPaidByCustomer(d, apps)) };
+      return { invoiceNumber:d.id, invoiceDate:d.date || d.createdDate || '', postDate:d.postDate || '', postPeriod:d.postPeriod || periodFromDate(d.postDate || d.date), customer:d.customerName, customerId:d.customerId, taxZone:d.taxZone, taxCategory:[...(new Set((d.lines||[]).map(l=>l.taxCategory||'TAXABLE')))].join(', '), taxableAmount:sign*Number(d.taxableTotal||d.taxSummary?.taxableTotal||0), exemptAmount:sign*Number(d.exemptTotal||d.taxSummary?.exemptTotal||0), stateTax:sign*Number(td.stateTaxAmount||0), countyTax:sign*Number(td.countyTaxAmount||0), cityTax:sign*Number(td.cityTaxAmount||0), spdTax:sign*Number(td.spdTaxAmount||0), otherLocalTax:sign*Number(td.otherLocalTaxAmount||0), totalTax:sign*Number(d.taxTotal||td.totalTaxAmount||0), invoiceStatus:d.status, paymentStatus:Number(d.balance||0)===0?'Paid':'Open', state:zone.state||'', county:zone.county||'', city:zone.city||'', zip:zone.zip||'', taxPaidByCustomer:sign*taxPaidByCustomer(d, apps), taxPayable:sign*(Number(d.taxTotal||0)-taxPaidByCustomer(d, apps)) };
     });
   const by = new Map();
   for (const r of detail) {
@@ -338,6 +344,22 @@ function salesTaxReport(filters = {}) {
     by.set(key, cur);
   }
   return { summary:[...by.values()], detail };
+}
+function taxCollectedReport(filters = {}) { return salesTaxReport(filters); }
+function taxLiabilityReport(filters = {}) {
+  const from = filters.dateFrom || filters.from || '0000-01-01';
+  const to = filters.dateTo || filters.to || '9999-12-31';
+  const inRange = j => (j.transactionDate || '') >= from && (j.transactionDate || '') <= to && (!filters.postPeriod || (j.postPeriod || j.financialPeriod) === filters.postPeriod);
+  const taxLines = journalEntries.filter(j => j.status === 'Posted').flatMap(j => (j.lines||[]).filter(l => l.account === TAX_LIABILITY_ACCOUNT).map(l => ({...l, jeNumber:j.jeNumber, transactionDate:j.transactionDate, postPeriod:j.postPeriod||j.financialPeriod, sourceRef:j.sourceRef, description:j.description})));
+  const before = taxLines.filter(l => l.transactionDate < from).reduce((s,l)=>s+Number(l.credit||0)-Number(l.debit||0),0);
+  const range = taxLines.filter(l => inRange(l));
+  const taxCollected = range.filter(l => Number(l.credit||0)>0).reduce((s,l)=>s+Number(l.credit||0),0);
+  const debits = range.filter(l => Number(l.debit||0)>0);
+  const taxRemittanceRefs = new Set(taxRemittances.map(r => r.jeReference));
+  const taxRemittancesPaid = debits.filter(l => taxRemittanceRefs.has(l.jeNumber)).reduce((s,l)=>s+Number(l.debit||0),0);
+  const creditMemoTaxReversals = debits.filter(l => !taxRemittanceRefs.has(l.jeNumber)).reduce((s,l)=>s+Number(l.debit||0),0);
+  const endingLiability = before + taxCollected - creditMemoTaxReversals - taxRemittancesPaid;
+  return { beginningLiability:before, taxCollected, creditMemoTaxReversals, taxRemittances:taxRemittancesPaid, endingLiability, detail:range };
 }
 
 function normalizeArStatus(doc){
@@ -574,16 +596,27 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); if(b.username==='admin'&&b.password==='admin'){res.setHeader('Set-Cookie','erp_session=admin; HttpOnly; SameSite=Lax; Path=/'); return json(res,200,{ok:true});} return json(res,401,{error:'Invalid'});}
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers);
 
- if(method==='GET'&&pathname==='/api/tax/rates') return json(res,200,taxRates);
- if(method==='GET'&&pathname==='/api/tax/zones') return json(res,200,taxZones);
+ if(method==='GET'&&pathname==='/api/tax/rates') return json(res,200,listTaxZoneVersions());
+ if(method==='GET'&&pathname==='/api/tax/zones') return json(res,200,listTaxZoneVersions());
+ if(method==='POST'&&pathname==='/api/tax/zones'){ const b=await body(req); return json(res,201,saveTaxZoneVersion(b)); }
+ if(method==='PUT'&&pathname.startsWith('/api/tax/zones/')){ const taxId=decodeURIComponent(pathname.split('/').pop()); const b=await body(req); return json(res,200,saveTaxZoneVersion({...b,taxId})); }
+ if(method==='POST'&&pathname==='/api/tax/zones/copy'){ const b=await body(req); return json(res,201,copyTaxZoneVersion(b.taxId||b.taxZoneId,b.effectiveDate)); }
+ if(method==='POST'&&pathname==='/api/tax/zones/inactivate'){ const b=await body(req); return json(res,200,inactivateTaxZoneVersion(b.taxId)); }
+ if(method==='POST'&&pathname==='/api/tax/zones/import'){ const b=await body(req); try{ const imported=importTaxRates(Array.isArray(b)?b:(b.rows||[])); return json(res,201,{imported:imported.length,rates:imported}); }catch(e){ return json(res,400,{error:e.message,details:e.details||[]}); } }
  if(method==='GET'&&pathname==='/api/tax/categories') return json(res,200,taxCategories);
+ if(method==='POST'&&pathname==='/api/tax/categories'){ const b=await body(req); return json(res,201,saveTaxCategory(b)); }
+ if(method==='PUT'&&pathname.startsWith('/api/tax/categories/')){ const id=decodeURIComponent(pathname.split('/').pop()); const b=await body(req); return json(res,200,saveTaxCategory({...b,categoryId:id})); }
  if(method==='GET'&&pathname==='/api/tax/jurisdictions') return json(res,200,taxJurisdictions);
- if(method==='GET'&&pathname==='/api/tax/exemptions') return json(res,200,customerExemptions);
+ if(method==='GET'&&pathname==='/api/tax/exemptions') return json(res,200,customers.filter(c=>c.taxExempt||c.exemptionNumber).map(c=>({customerId:c.id,customerName:c.name,taxExempt:!!c.taxExempt,exemptionNumber:c.exemptionNumber||'',exemptionExpiration:c.exemptionExpirationDate||'',taxZone:c.taxZone||'',certificateAttachment:c.certificateAttachment||''})));
  if(method==='GET'&&pathname==='/api/tax/history') return json(res,200,taxHistory);
- if(method==='GET'&&pathname==='/api/tax/providers') return json(res,200,[{id:'internal',name:internalTaxProvider.name,active:true},{id:'avalara',name:'Avalara',active:false,future:true},{id:'vertex',name:'Vertex',active:false,future:true},{id:'taxjar',name:'TaxJar',active:false,future:true},{id:'custom-state-imports',name:'Custom state imports',active:false,future:true}]);
+ if(method==='GET'&&pathname==='/api/tax/remittances') return json(res,200,taxRemittances);
+ if(method==='POST'&&pathname==='/api/tax/remittances'){ const b=await body(req); const amount=Number(b.amountPaid||b.amount||0); if(amount<=0) return json(res,400,{error:'Amount Paid must be positive'}); const remittanceDate=b.remittanceDate||new Date().toISOString().slice(0,10); const pp=periodFromDate(remittanceDate); validateSourceAndGlOpen('AR',pp); const cashAccount=requireAccount(b.cashAccount||POSTING_ACCOUNTS.arCash,'Tax remittance cash account'); const id=`TAXREM-${String(taxRemittances.length+1001).padStart(4,'0')}`; const jeReference=createPostedJournal({module:'AR',description:`Sales tax remittance ${id}`,postPeriod:pp,transactionDate:remittanceDate,sourceRef:id,lines:[{account:TAX_LIABILITY_ACCOUNT,debit:amount,sourceReference:id},{account:cashAccount,credit:amount,sourceReference:id}]}); const row={id,state:b.state||'',taxPeriod:b.taxPeriod||pp,remittanceDate,postPeriod:pp,amountPaid:amount,checkNumber:b.checkNumber||'',notes:b.notes||'',cashAccount,jeReference}; taxRemittances.push(row); return json(res,201,row); }
+ if(method==='GET'&&pathname==='/api/tax/providers') return json(res,200,[{id:'internal',name:internalTaxProvider.name,active:true,internal:true}]);
  if(method==='POST'&&pathname==='/api/tax/calculate'){ const b=await body(req); const customer=customers.find(c=>c.id===(b.customerId||b.invoice?.customerId))||{}; return json(res,200,calculateTax(b.invoice||b,{customer,items:itemMaster})); }
- if(method==='POST'&&pathname==='/api/tax/import-rates'){ const b=await body(req); const rows=Array.isArray(b)?b:(b.rows||[]); const imported=importTaxRates(rows); return json(res,201,{imported:imported.length,rates:imported}); }
+ if(method==='POST'&&pathname==='/api/tax/import-rates'){ const b=await body(req); try{ const imported=importTaxRates(Array.isArray(b)?b:(b.rows||[])); return json(res,201,{imported:imported.length,rates:imported}); }catch(e){ return json(res,400,{error:e.message,details:e.details||[]}); } }
  if(method==='GET'&&pathname==='/api/ar/reports/sales-tax') return json(res,200,salesTaxReport(query));
+ if(method==='GET'&&pathname==='/api/ar/reports/tax-collected') return json(res,200,taxCollectedReport(query));
+ if(method==='GET'&&pathname==='/api/ar/reports/tax-liability') return json(res,200,taxLiabilityReport(query));
 
  if(method==='GET'&&pathname==='/api/ar/credit-terms') return json(res,200,creditTerms);
  if(method==='POST'&&pathname==='/api/ar/customers'){ const b=await body(req); if(!b.name) return json(res,400,{error:'Customer Name required'}); const next=`CUST-${String(customers.reduce((m,c)=>Math.max(m,Number(String(c.id||'').split('-')[1]||1000)),1000)+1).padStart(4,'0')}`; const id=b.id||next; if(customers.find(c=>c.id===id)) return json(res,400,{error:'Customer ID must be unique'}); const c={id,name:b.name,status:b.status||'Active',billingAddress:b.billingAddress||'',shippingAddress:b.shippingAddress||'',phone:b.phone||'',email:b.email||'',terms:b.terms||'NET30',taxZone:b.taxZone||'DEFAULT',taxExempt:!!b.taxExempt,exemptionNumber:b.exemptionNumber||'',exemptionType:b.exemptionType||'',exemptionExpirationDate:b.exemptionExpirationDate||'',exemptStates:b.exemptStates||[],certificateAttachment:b.certificateAttachment||'',currency:b.currency||'USD',contactPerson:b.contactPerson||''}; customers.push(c); return json(res,201,c); }
