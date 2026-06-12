@@ -126,3 +126,10 @@ label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
 .grid-tools button,.grid-tools select{height:34px}.grid-customize{background:#173b66}.grid-save-view{background:#2563eb}.grid-reset{background:#64748b}.grid-csv,.grid-csv-all{background:#0f766e}
 .filter-chip-row{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.filter-chip{display:inline-flex;gap:6px;align-items:center;background:#eaf3ff;border:1px solid #b8d5fb;color:#174d90;border-radius:999px;padding:4px 9px;font-size:12px}.filter-chip button{background:transparent;color:#174d90;padding:0;border:0;font-weight:800}
 .grid-panel-overlay{position:fixed;inset:0;background:#0005;z-index:10001;display:flex;justify-content:flex-end}.grid-panel{width:min(460px,96vw);height:100vh;background:#f8fbff;border-left:1px solid #cbd9ee;box-shadow:-10px 0 24px #0002;overflow:auto}.grid-panel-actions{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;background:#fff;border-bottom:1px solid #e0e8f4}.grid-col-row{grid-template-columns:24px 1fr auto 90px}.grid-col-row label{display:flex;align-items:center;gap:6px}.pin-label{font-size:12px;color:#536273}.gcWidth{width:86px}.pinned-col{position:sticky;left:0;z-index:4;box-shadow:2px 0 0 #dbe4f0;background:#fff}.erp-data-grid th.pinned-col{z-index:5;background:#e4eefb}.grid-filter-pop{z-index:10002;border-radius:10px;box-shadow:0 12px 24px #0003}.grid-filter-btn{background:#fff;color:#1f5fae;border:1px solid #c7d5e8;padding:3px 6px}.grid-view-select{min-width:180px;background:#fff;color:#1f2d3d}
+
+/* AP bill matching lookup controls */
+.erp-line-actions{display:flex;align-items:center;gap:10px;margin:0 0 8px}
+.form-warning{display:inline-block;background:#fff4e5;border:1px solid #f3c17a;color:#8a4b00;border-radius:4px;padding:6px 10px;font-weight:700}
+.lookup-modal{width:min(1100px,96vw);max-height:88vh;overflow:auto}
+.lookup-modal .cn-head{display:grid;grid-template-columns:1fr minmax(240px,360px);gap:12px;align-items:center}
+.lookup-modal table{min-width:900px}
