@@ -34,7 +34,7 @@ export const arDocuments = [
 if (!arDocuments.some(d => d.id === 'INV-SO-1002')) {
   arDocuments.push({
     id: 'INV-SO-1002', type: 'Invoice', customerId: 'CUST-1002', customerName: 'Midwest Distribution', date: '2026-05-14', postDate: '2026-05-14', postPeriod: '2026-05', dueDate: '2026-05-29', terms: 'NET15', amount: 450, balance: 450, status: 'Open', posted: true, createdDate: '2026-05-14',
-    sourceSalesOrderId: 'SO-1002', sourceSalesOrderNumber: 'SO-1002', sourceShipmentId: 'SHIP-1001', customerPO: 'PO-MWD-512', salesOrderReference: 'SO-1002', shipmentNumber: 'SHIP-1001',
+    sourceSalesOrderId: 'SO-1002', sourceSalesOrderNumber: 'SO-1002', sourceShipmentId: 'SH000001', customerPO: 'PO-MWD-512', salesOrderReference: 'SO-1002', shipmentNumber: 'SH000001',
     lines: [{ itemCode: 'ITEM-1003', item: 'ITEM-1003', description: 'LED Panel 4ft', qty: 10, unitPrice: 45, lineTotal: 450, revenueAccount: '4008', sourceSalesOrderLineId: 'SOL-1002-1' }], applications: []
   });
 }
@@ -74,7 +74,7 @@ export const apDocuments = [
 
 export const salesOrders = [
   { id:'SO-1001', orderType:'SO', orderNumber:'SO-1001', status:'Open', orderDate:'2026-05-10', requestedShipDate:'2026-05-17', postDate:'2026-05-10', postPeriod:'2026-05', customerPO:'PO-ABC-510', description:'Ink and bracket order', customerId:'CUST-1001', customerName:'ABC Industries', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET30', dueDate:'2026-06-09', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1290, discountTotal:0, taxTotal:0, orderTotal:1290, openBalance:1290, invoicedAmount:0, shippedAmount:0, shippingInstructions:'Ship complete when allocated.', internalComments:'Sample open SO.', notes:'Customer PO attached.', attachments:[{name:'PO-ABC-510.pdf',type:'Customer PO'}] },
-  { id:'SO-1002', orderType:'SO', orderNumber:'SO-1002', status:'Partially Shipped', orderDate:'2026-05-12', requestedShipDate:'2026-05-14', postDate:'2026-05-12', postPeriod:'2026-05', customerPO:'PO-MWD-512', description:'Panels and service', customerId:'CUST-1002', customerName:'Midwest Distribution', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET15', dueDate:'2026-05-27', shipVia:'FedEx', fobPoint:'Origin', freight:0, lineTotal:1280, discountTotal:0, taxTotal:0, orderTotal:1280, openBalance:830, invoicedAmount:450, shippedAmount:450, shippingInstructions:'Partial shipment allowed.', internalComments:'Shipment SHIP-1001 confirmed.', notes:'' },
+  { id:'SO-1002', orderType:'SO', orderNumber:'SO-1002', status:'Partially Shipped', orderDate:'2026-05-12', requestedShipDate:'2026-05-14', postDate:'2026-05-12', postPeriod:'2026-05', customerPO:'PO-MWD-512', description:'Panels and service', customerId:'CUST-1002', customerName:'Midwest Distribution', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET15', dueDate:'2026-05-27', shipVia:'FedEx', fobPoint:'Origin', freight:0, lineTotal:1280, discountTotal:0, taxTotal:0, orderTotal:1280, openBalance:830, invoicedAmount:450, shippedAmount:450, shippingInstructions:'Partial shipment allowed.', internalComments:'Shipment SH000001 confirmed.', notes:'' },
   { id:'SO-1003', orderType:'SO', orderNumber:'SO-1003', status:'Credit Hold', orderDate:'2026-05-15', requestedShipDate:'2026-05-22', postDate:'2026-05-15', postPeriod:'2026-05', customerPO:'PO-CSP-515', description:'Replacement head and shipping', customerId:'CUST-1003', customerName:'Chicago Screen Print', branch:'100', warehouse:'MAIN', currency:'USD', terms:'DUE', dueDate:'2026-05-15', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1325, discountTotal:0, taxTotal:0, orderTotal:1325, openBalance:1325, invoicedAmount:0, shippedAmount:0, creditWarning:'Customer exceeds credit limit. Order placed on credit hold.', shippingInstructions:'Do not ship until credit released.', internalComments:'Customer on hold.', notes:'' },
   { id:'SO-1004', orderType:'SO', orderNumber:'SO-1004', status:'Open', orderDate:'2026-05-18', requestedShipDate:'2026-05-25', postDate:'2026-05-18', postPeriod:'2026-05', customerPO:'PO-LAKE-518', description:'Cyan ink and service', customerId:'CUST-1004', customerName:'Lakeside Apparel', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET45', dueDate:'2026-07-02', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1630, discountTotal:0, taxTotal:0, orderTotal:1630, openBalance:1630, invoicedAmount:0, shippedAmount:0, shippingInstructions:'Call before delivery.', internalComments:'', notes:'' },
   { id:'SO-1005', orderType:'SO', orderNumber:'SO-1005', status:'Saved', orderDate:'2026-05-20', requestedShipDate:'2026-05-27', postDate:'2026-05-20', postPeriod:'2026-05', customerPO:'PO-NSG-520', description:'Saved ink order', customerId:'CUST-1005', customerName:'North Star Graphics', branch:'100', warehouse:'MAIN', currency:'USD', terms:'NET30', dueDate:'2026-06-19', shipVia:'UPS Ground', fobPoint:'Origin', freight:0, lineTotal:1140, discountTotal:0, taxTotal:0, orderTotal:1140, openBalance:1140, invoicedAmount:0, shippedAmount:0, shippingInstructions:'', internalComments:'Awaiting confirmation.', notes:'' }
@@ -95,15 +95,15 @@ export const salesOrderLines = [
 ];
 
 export const shipments = [
-  { id:'SHIP-1001', shipmentNumber:'SHIP-1001', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', customerId:'CUST-1002', customerName:'Midwest Distribution', shipDate:'2026-05-14', warehouse:'MAIN', shipVia:'FedEx', trackingNumber:'1ZSO1002', status:'Confirmed', freightAmount:0, jeNumber:'' }
+  { id:'SH000001', shipmentId:'SH000001', shipmentNumber:'SH000001', shipmentNbr:'SH000001', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', customerId:'CUST-1002', customerName:'Midwest Distribution', shipDate:'2026-05-14', warehouse:'MAIN', shipVia:'FedEx', trackingNumber:'1ZSO1002', status:'Confirmed', freightAmount:0, jeNumber:'' }
 ];
 
 export const shipmentLines = [
-  { id:'SHL-1001-1', shipmentId:'SHIP-1001', salesOrderId:'SO-1002', salesOrderLineId:'SOL-1002-1', itemId:'ITEM-1003', inventoryId:'ITEM-1003', description:'LED Panel 4ft', orderedQty:20, shippedQty:10, backorderQty:10, uom:'EA', warehouse:'MAIN', location:'MAIN-A2' }
+  { id:'SHL-1001-1', shipmentId:'SH000001', salesOrderId:'SO-1002', salesOrderLineId:'SOL-1002-1', itemId:'ITEM-1003', inventoryId:'ITEM-1003', description:'LED Panel 4ft', orderedQty:20, shippedQty:10, backorderQty:10, uom:'EA', warehouse:'MAIN', location:'MAIN-A2' }
 ];
 
 export const salesOrderInvoices = [
-  { id:'SOI-1002-1', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', shipmentId:'SHIP-1001', invoiceId:'INV-SO-1002', invoiceNumber:'INV-SO-1002', invoiceDate:'2026-05-14', invoiceAmount:450, openBalance:450, status:'Open', arReference:'INV-SO-1002' }
+  { id:'SOI-1002-1', salesOrderId:'SO-1002', salesOrderNumber:'SO-1002', shipmentId:'SH000001', invoiceId:'INV-SO-1002', invoiceNumber:'INV-SO-1002', invoiceDate:'2026-05-14', invoiceAmount:450, openBalance:450, status:'Open', arReference:'INV-SO-1002' }
 ];
 
 export const inventoryAllocations = [
@@ -114,6 +114,6 @@ export const inventoryAllocations = [
 
 export const salesOrderStatusHistory = [
   { id:'SOH-1001', salesOrderId:'SO-1001', date:'2026-05-10T09:00:00.000Z', user:'admin', oldStatus:'Draft', newStatus:'Open', action:'Confirm', note:'Order confirmed and inventory allocated.' },
-  { id:'SOH-1002', salesOrderId:'SO-1002', date:'2026-05-14T10:15:00.000Z', user:'admin', oldStatus:'Open', newStatus:'Partially Shipped', action:'Confirm Shipment', note:'SHIP-1001 confirmed.' },
+  { id:'SOH-1002', salesOrderId:'SO-1002', date:'2026-05-14T10:15:00.000Z', user:'admin', oldStatus:'Open', newStatus:'Partially Shipped', action:'Confirm Shipment', note:'SH000001 confirmed.' },
   { id:'SOH-1003', salesOrderId:'SO-1003', date:'2026-05-15T11:00:00.000Z', user:'admin', oldStatus:'Draft', newStatus:'Credit Hold', action:'Credit Check', note:'Customer exceeds credit limit. Order placed on credit hold.' }
 ];
