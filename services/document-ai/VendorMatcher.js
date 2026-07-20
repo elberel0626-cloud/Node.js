@@ -1,0 +1,1 @@
+export function normalizeVendorName(value=''){return String(value).toLowerCase().replace(/&/g,' and ').replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\b(incorporated|inc|llc|ltd|limited|corp|corporation)\b/g,' ').replace(/\s+/g,' ').trim();}
