@@ -63,6 +63,7 @@ export const branchMaster = [
 
 
 export const vendors = [
+  {id:'VEND-MR-001',name:'M&R Printing Equipment Inc.',legalName:'M&R Printing Equipment Inc.',aliases:['M&R PRINTING EQUIPMENT INC.','M&R Printing Equipment','M&R Companies','The M&R Companies','M and R Printing Equipment','MR Printing Equipment'],normalizedSearch:['mr printing equipment inc','mr printing equipment','mr companies','the mr companies'],status:'Active',address:'440 Medinah Road\nRoselle, IL 60172\nUnited States',phone:'630-858-6101',additionalPhone:'800-736-6431',email:'',terms:'',vendorClass:'Equipment Supplier',taxId:'',currency:'USD',paymentMethod:'Credit Card'},
   {id:'VEND-1001',name:'North Supply',status:'Active',address:'100 Main',phone:'555-1001',email:'ap@north.com',terms:'NET30',taxId:'TIN1001',currency:'USD',paymentMethod:'Check'},
   {id:'VEND-1002',name:'Prime Industrial',status:'Active',address:'200 Lake',phone:'555-1002',email:'ap@prime.com',terms:'NET15',taxId:'TIN1002',currency:'USD',paymentMethod:'ACH/Wire'}
 ];
