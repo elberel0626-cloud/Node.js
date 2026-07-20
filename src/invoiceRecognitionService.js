@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,19 +12,20 @@ export class InvoiceRecognitionService {
   }
   async processIncomingDocument(documentId){
     const doc=this.documents.find(d=>d.id===documentId); if(!doc) throw new Error('Incoming document not found');
-    doc.status='Processing'; doc.processingDetails={embeddedTextDetected:false,ocrUsed:false,pagesProcessed:0,vendorMatchConfidence:0,poMatchResult:'Not processed',lineTableDetected:false,errorDetails:''};
+    doc.status='PROCESSING'; doc.processingStatus='PROCESSING'; const started=Date.now(); doc.processingDetails={...(doc.processingDetails||{}),embeddedTextDetected:false,ocrUsed:false,pagesProcessed:0,vendorMatchConfidence:0,poMatchResult:'Not processed',lineTableDetected:false,errorDetails:''};
     try{
       const extracted=await this.extractPdfText(doc.attachment||{}); const text=extracted.text;
       doc.processingDetails.embeddedTextDetected=!!extracted.embeddedTextDetected; doc.processingDetails.ocrUsed=!!extracted.ocrUsed; doc.processingDetails.pagesProcessed=extracted.pagesProcessed||1;
       if(!text.trim()) throw new Error('Invoice recognition failed. Please review the document and enter the information manually.');
       const recognized=this.buildIncomingRecord({...doc, text, source:doc.source||'PDF Upload', fileName:doc.fileName, attachmentDataUrl:doc.attachment?.dataUrl, reuseId:doc.id});
-      recognized.attachment=doc.attachment; recognized.processingDetails={...doc.processingDetails,...(recognized.processingDetails||{}),vendorMatchConfidence:recognized.vendorMatch?.confidence||0,poMatchResult:recognized.poMatch?.status||'PO Not Found',lineTableDetected:(recognized.extracted?.lines||[]).length>0};
+      recognized.attachment=doc.attachment; recognized.storageKey=doc.storageKey; recognized.processingStatus=recognized.status; recognized.processingDetails={...doc.processingDetails,...(recognized.processingDetails||{}),processingDurationMs:Date.now()-started,vendorMatchConfidence:recognized.vendorMatch?.confidence||0,selectedVendorScore:recognized.vendorMatch?.confidence||0,vendorCandidates:recognized.vendorMatch?.candidates||[],poMatchResult:recognized.poMatch?.status||'PO Not Found',poCandidates:recognized.poMatch?.candidates||[],lineTableDetected:(recognized.extracted?.lines||[]).length>0,lineItemsDetected:(recognized.extracted?.lines||[]).length};
       this.updateDocument(documentId,recognized); return recognized;
-    }catch(e){ doc.status='Failed'; doc.processingDetails.errorDetails=e.message; return doc; }
+    }catch(e){ doc.status='FAILED'; doc.processingStatus='FAILED'; doc.processingError=e.message; doc.processingDetails.errorCode='RECOGNITION_FAILED'; doc.processingDetails.errorMessage=e.message; doc.processingDetails.errorDetails=e.message; return doc; }
   }
   async extractPdfText(file={}){
     const mime=file.mimeType||''; const out={text:'',embeddedTextDetected:false,ocrUsed:false,pagesProcessed:1,wordsWithCoordinates:[]};
     if(file.text) { out.text=file.text; out.embeddedTextDetected=true; return out; }
+    if(file.storageKey){ out.base64=(await readFile(file.storageKey)).toString('base64'); }
     if(!file.dataUrl && !file.base64) return out;
     const dir=await mkdtemp(path.join(os.tmpdir(),'ap-invoice-')); const pdf=path.join(dir,file.name||'invoice.pdf');
     try{
