@@ -1219,4 +1219,16 @@ if(method==='POST'&&pathname==='/api/ar/documents/post'){
  if(method==='GET'&&pathname==='/api/gl/journal-entries') return json(res,200,journalEntries);
  return json(res,404,{error:'Not found'});
  }catch(e){return json(res,400,{error:e.message});}});
+console.log("[Document AI Config]", {
+  provider: process.env.DOCUMENT_AI_PROVIDER || null,
+  traceEnabled: process.env.AP_TRACE_INVOICE_RECOGNITION === "1",
+  azureEndpointConfigured: Boolean(
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
+  ),
+  azureKeyConfigured: Boolean(
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
+  ),
+  azureModel:
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_MODEL || null,
+});
 server.listen(process.env.PORT||3000);
