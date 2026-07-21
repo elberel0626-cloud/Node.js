@@ -14,10 +14,11 @@ const requestUrl=(response, fallback)=>response?.request?.url || fallback;
 const requestMethod=(response, fallback='SDK')=>response?.request?.method || fallback;
 const logAzureExchange=(details)=>console.log('[invoice-recognition-trace] azure-sdk-exchange', JSON.stringify(details,null,2));
 const sanitizeRequestHeaders=(headers={})=>Object.fromEntries(Object.entries(headers).filter(([key])=>key.toLowerCase()!=='ocp-apim-subscription-key'));
+export const normalizeAzureEndpoint=(endpoint='')=>{ const base=String(endpoint||'').replace(/\/+$/,''); return base.endsWith('/documentintelligence')?base:`${base}/documentintelligence`; };
 
 export class AzureDocumentAIProvider extends DocumentAIProvider {
   constructor({ endpoint=process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT, key=process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY, model=process.env.AZURE_DOCUMENT_INTELLIGENCE_MODEL||'prebuilt-invoice', apiVersion=process.env.AZURE_DOCUMENT_INTELLIGENCE_API_VERSION||'2024-11-30' }={}) {
-    super(); Object.assign(this,{endpoint:String(endpoint||'').replace(/\/+$/,''),key,model,apiVersion,providerName:'azure-document-intelligence',client:null}); this.assertConfigured();
+    super(); Object.assign(this,{endpoint:normalizeAzureEndpoint(endpoint),key,model,apiVersion,providerName:'azure-document-intelligence',client:null}); this.assertConfigured();
   }
   assertConfigured(){ if(!this.endpoint||!this.key) throw new Error('Azure Document Intelligence startup validation failed: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY are required.'); }
   getClient(){
@@ -29,7 +30,9 @@ export class AzureDocumentAIProvider extends DocumentAIProvider {
     console.log('[invoice-recognition-trace] azure-sdk-call', { transport:'@azure-rest/ai-document-intelligence', method:'POST', endpoint:this.endpoint, apiVersion:this.apiVersion, model:this.model, requestHeaders:sanitizeRequestHeaders(requestHeaders) });
     logTrace('azure-request', { called:true, transport:'@azure-rest/ai-document-intelligence', method:'POST', endpoint:this.endpoint, apiVersion:this.apiVersion, model:this.model, mimeType:'application/json', bytes:document?.length||0, requestHeaders:sanitizeRequestHeaders(requestHeaders) });
     const initialResponse=await client.path('/documentModels/{modelId}:analyze', this.model).post({ contentType:'application/json', body:{base64Source} });
-    logAzureExchange({ method:requestMethod(initialResponse,'POST'), requestUrl:requestUrl(initialResponse,this.endpoint), apiVersion:this.apiVersion, model:this.model, requestHeaders:sanitizeRequestHeaders(requestHeaders), httpStatus:initialResponse.status, responseHeaders:headerObject(initialResponse.headers), responseBody:responseBody(initialResponse) });
+    const outboundUrl=requestUrl(initialResponse,this.endpoint);
+    console.log('[invoice-recognition-trace] azure-outbound-request-url', outboundUrl);
+    logAzureExchange({ method:requestMethod(initialResponse,'POST'), requestUrl:outboundUrl, apiVersion:this.apiVersion, model:this.model, requestHeaders:sanitizeRequestHeaders(requestHeaders), httpStatus:initialResponse.status, responseHeaders:headerObject(initialResponse.headers), responseBody:responseBody(initialResponse) });
     if(isUnexpected(initialResponse)){ const body=responseBody(initialResponse); const error=new Error(`Azure Document Intelligence request failed: ${initialResponse.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`: ${body.error.message}`:''}`); error.azureDiagnostics={called:true,endpoint:this.endpoint,requestUrl:requestUrl(initialResponse,this.endpoint),model:this.model,httpStatus:initialResponse.status,providerRequestId:initialResponse.headers?.['apim-request-id']||initialResponse.headers?.['x-ms-request-id']||'',responseEmpty:!body,errorCode:body?.error?.code||'',errorMessage:body?.error?.message||'',raw:body}; throw error; }
     const poller=getLongRunningPoller(client, initialResponse);
     const finalResponse=await poller.pollUntilDone();
