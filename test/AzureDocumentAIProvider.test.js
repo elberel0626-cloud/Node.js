@@ -23,3 +23,11 @@ test('package.json pins the REST SDK version', async () => {
   const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.dependencies['@azure-rest/ai-document-intelligence'], '1.1.0');
 });
+
+
+test('endpoint validation message includes only the sanitized pathname', async () => {
+  const source = await readFile(new URL('../services/document-ai/AzureDocumentAIProvider.js', import.meta.url), 'utf8');
+  assert.match(source, /new URL\(endpoint\)/);
+  assert.match(source, /Current pathname:/);
+  assert.doesNotMatch(source, /Current key:/);
+});

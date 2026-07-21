@@ -18,11 +18,8 @@ function normalizeResourceEndpoint(endpoint=''){
 
 function assertResourceEndpoint(endpoint){
   const endpointUrl=new URL(endpoint);
-  const pathname=endpointUrl.pathname.toLowerCase();
-  if(pathname&&pathname!=='/') throw new Error('Azure endpoint must be the base resource endpoint without an API path.');
-  for(const segment of ['/documentintelligence','/formrecognizer','/documentmodels']){
-    if(pathname.includes(segment)) throw new Error('Azure endpoint must be the base resource endpoint without an API path.');
-  }
+  const pathname=endpointUrl.pathname;
+  if(pathname&&pathname!=='/') throw new Error(`Azure endpoint must be the base resource endpoint. Current pathname: "${pathname}"`);
 }
 
 export class AzureDocumentAIProvider extends DocumentAIProvider {
