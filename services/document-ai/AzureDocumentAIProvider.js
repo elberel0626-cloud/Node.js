@@ -11,6 +11,7 @@ const headerObject=(headers={})=>{
   return {...headers};
 };
 const requestUrl=(response, fallback)=>response?.request?.url || fallback;
+const timeoutAfter=(ms)=>new Promise((_,reject)=>setTimeout(()=>reject(new Error('Azure Document Intelligence analysis timed out after 120 seconds.')),ms));
 
 function normalizeResourceEndpoint(endpoint=''){
   return String(endpoint||'').replace(/\/+$/,'');
@@ -28,10 +29,12 @@ export class AzureDocumentAIProvider extends DocumentAIProvider {
   }
   assertConfigured(){ if(!this.endpoint||!this.key) throw new Error('Azure Document Intelligence endpoint and key are required.'); }
   async analyzeInvoice(document,mimeType='application/pdf'){
-    this.assertConfigured(); const started=Date.now(); const base64Source=Buffer.from(document).toString('base64');
+    this.assertConfigured(); const started=Date.now(); const base64Started=Date.now(); const base64Source=Buffer.from(document).toString('base64'); const base64ConversionMs=Date.now()-base64Started;
     console.log('[Azure Document Intelligence config]', { endpoint:this.endpoint, sdkPackage:'@azure-rest/ai-document-intelligence', sdkPackageVersion:SDK_PACKAGE_VERSION, model:this.model });
     logTrace('azure-request', { called:true, transport:'@azure-rest/ai-document-intelligence', sdkPackageVersion:SDK_PACKAGE_VERSION, endpoint:this.endpoint, model:this.model, bytes:document?.length||0 });
+    const submitStarted=Date.now();
     const initialResponse=await this.client.path('/documentModels/{modelId}:analyze', this.model).post({ contentType:'application/json', body:{base64Source} });
+    const azureSubmitMs=Date.now()-submitStarted;
     console.log('[Azure initial response]', { status:initialResponse.status, model:this.model, endpoint:this.endpoint });
     if(isUnexpected(initialResponse)){
       const azureError=initialResponse.body?.error;
@@ -41,13 +44,15 @@ export class AzureDocumentAIProvider extends DocumentAIProvider {
       throw error;
     }
     const poller=getLongRunningPoller(this.client, initialResponse);
-    const finalResponse=await poller.pollUntilDone();
+    const pollStarted=Date.now();
+    const finalResponse=await Promise.race([poller.pollUntilDone(),timeoutAfter(Number(process.env.AZURE_DOCUMENT_INTELLIGENCE_TIMEOUT_MS||120000))]);
+    const azurePollingMs=Date.now()-pollStarted;
     const analyzeResult=finalResponse.body?.analyzeResult;
     const headers=headerObject(finalResponse.headers);
     const providerRequestId=headers['apim-request-id']||headers['x-ms-request-id']||headers['x-ms-client-request-id']||'';
     console.log('[Azure final response]', { status:finalResponse.status, model:this.model, endpoint:this.endpoint });
     logTrace('azure-final-response', { status:finalResponse.status, model:this.model, endpoint:this.endpoint, documents:Array.isArray(analyzeResult?.documents)?analyzeResult.documents.length:0 });
-    return {providerName:this.providerName,providerModel:this.model,providerEndpoint:this.endpoint,providerHttpStatus:finalResponse.status,providerRequestId,providerResponseEmpty:isEmptyAzureResult(analyzeResult),processingDurationMs:Date.now()-started,raw:finalResponse.body,analyzeResult};
+    return {providerName:this.providerName,providerModel:this.model,providerEndpoint:this.endpoint,providerHttpStatus:finalResponse.status,providerRequestId,providerResponseEmpty:isEmptyAzureResult(analyzeResult),processingDurationMs:Date.now()-started,timing:{base64ConversionMs,azureSubmitMs,azurePollingMs},raw:finalResponse.body,analyzeResult};
   }
   async analyzeLayout(document,mimeType){ return this.analyzeInvoice(document,mimeType); }
   async extractText(document,mimeType){ const r=await this.analyzeInvoice(document,mimeType); return { text:r.analyzeResult?.content||'', ...r }; }
