@@ -10,5 +10,9 @@
   },
   "optionalDependencies": {
     "nodemailer": "^6.9.16"
+  },
+  "dependencies": {
+    "@azure/ai-document-intelligence": "latest",
+    "@azure/core-auth": "latest"
   }
 }
