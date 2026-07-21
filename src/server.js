@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { parse } from 'node:url';
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import crypto from 'node:crypto';
@@ -110,6 +110,9 @@ const documentAuditLog=[];
 const modelVersions=[{provider:'azure-document-intelligence',model:'prebuilt-invoice',version:process.env.AZURE_DOCUMENT_INTELLIGENCE_API_VERSION||'2024-11-30'}];
 const vendorRecognitionProfiles=VendorLearningProfiles;
 let apIncomingSeq=1;
+const activeRecognitionDocuments=new Set();
+const recognitionQueue=[];
+let recognitionQueueRunning=false;
 const apAutomationSettings={confidenceThreshold:90,vendorAutoAssignThreshold:98,vendorReviewThreshold:90,priceVariancePct:5,quantityVariancePct:3,amountVariance:100,matchingMode:'3-Way'};
 const tokenize=(s)=>String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
 const money=(v)=>Number(String(v??0).replace(/[^0-9.-]/g,'')||0);
@@ -163,9 +166,24 @@ async function receiveIncomingDocument(upload){
   const rec={id,originalFileName,storedFileName,mimeType,fileSize:bytes.length,storageProvider:'persistent-volume',storageKey,fileHash,receivedAt:now,sourceType:upload.source||'PDF Upload',sourceEmail:upload.senderEmail||'',processingStatus:'RECEIVED',processingError:'',pageCount:0,createdBy:upload.uploadedBy||'ap.clerk',createdAt:now,updatedAt:now,source:upload.source||'PDF Upload',senderEmail:upload.senderEmail||'',receivedDate:upload.receivedDate||now,assignedUser:upload.assignedUser||'ap.clerk',aiConfidence:0,documentType:'',fileName:originalFileName,uploadedBy:upload.uploadedBy||'ap.clerk',uploadedAt:now,status:'RECEIVED',duplicateDocumentId:duplicateUpload?.id||'',attachment:{name:originalFileName,mimeType,dataUrl:raw,text:upload.text||'',storageKey},extracted:{},confidence:{},vendorMatch:{},poMatch:{status:'PO Not Found',summary:'Not processed',lines:[]},exceptions:[],draftBill:{},billId:'',auditTrail:[{date:now,user:upload.uploadedBy||'ap.clerk',action:'Received',details:`Received ${originalFileName}`}],processingDetails:{fileStored:true,storageKey,mimeType,fileSize:bytes.length,pdfValid,pageCount:0,embeddedTextDetected:false,ocrUsed:false,recognitionProvider:process.env.DOCUMENT_AI_PROVIDER||'local',providerModelVersion:'prebuilt-invoice',providerJobId:'',processingDurationMs:0,vendorCandidates:[],selectedVendorScore:0,poCandidates:[],lineItemsDetected:0,errorCode:'',errorMessage:'',retryCount:0,duplicateCandidate:duplicateUpload?{id:duplicateUpload.id,fileHash}:null}};
   if(duplicateUpload){ rec.exceptions.push({type:'Duplicate Upload',severity:'High',message:`This file hash matches incoming document ${duplicateUpload.id}.`}); }
   apIncomingVendorBills.unshift(rec);
+  enqueueIncomingRecognition(id);
   return rec;
 }
 
+
+
+function enqueueIncomingRecognition(documentId,{priority=false}={}){
+  const r=apIncomingVendorBills.find(x=>x.id===documentId); if(!r) return;
+  if(['Ready for Review','Converted','Failed','Processing'].includes(r.status)||recognitionQueue.includes(documentId)||activeRecognitionDocuments.has(documentId)) return;
+  r.status='Queued'; r.processingStatus='Queued'; r.queuedAt=new Date().toISOString();
+  if(priority) recognitionQueue.unshift(documentId); else recognitionQueue.push(documentId);
+  setTimeout(processRecognitionQueue,0);
+}
+async function processRecognitionQueue(){
+  if(recognitionQueueRunning) return; recognitionQueueRunning=true;
+  try{ while(recognitionQueue.length){ const id=recognitionQueue.shift(); try{ await processIncomingInvoice(id); }catch(e){ const r=apIncomingVendorBills.find(x=>x.id===id); if(r){ r.status='Failed'; r.processingStatus='Failed'; r.processingError=e.message; r.recognitionComplete=false; } console.error('Queued invoice recognition failed',id,e.message); } } }
+  finally{ recognitionQueueRunning=false; }
+}
 
 function incomingInvoiceReconciliation(r){
   const ex=r.extracted||{}; const lines=ex.lines||[];
@@ -179,17 +197,20 @@ function incomingInvoiceReconciliation(r){
 async function processIncomingInvoice(documentId, { retry = false } = {}){
   const r=apIncomingVendorBills.find(x=>x.id===documentId);
   if(!r) throw new Error('Incoming document not found');
-  if(!r.storageKey) throw new Error('Recognition failed: stored PDF could not be found.');
-  await access(r.storageKey).catch(()=>{throw new Error('Recognition failed: stored PDF could not be found.');});
-  if(['PROCESSING','QUEUED'].includes(r.processingStatus||r.status)) throw new Error('Document is already processing.');
-  if(retry){
-    r.extracted={}; r.confidence={}; r.vendorMatch={}; r.poMatch={status:'PO Not Found',summary:'Not processed',lines:[]}; r.draftBill={}; r.billId='';
-    r.exceptions=(r.exceptions||[]).filter(e=>e.type==='Duplicate Upload');
-    r.processingDetails={...(r.processingDetails||{}),retryCount:Number(r.processingDetails?.retryCount||0)+1,errorCode:'',errorMessage:'',errorDetails:''};
-  }
-  const result=await invoiceRecognitionService.processIncomingDocument(documentId);
-  if(result.status==='FAILED') throw new Error(`Recognition failed: ${result.processingError||result.processingDetails?.errorMessage||'unknown error'}`);
-  return result;
+  if(activeRecognitionDocuments.has(documentId)||['PROCESSING','Processing'].includes(r.processingStatus||r.status)){ const err=new Error('Invoice recognition is already in progress.'); err.code='RECOGNITION_ALREADY_PROCESSING'; err.statusCode=409; throw err; }
+  activeRecognitionDocuments.add(documentId);
+  try{
+    if(!r.storageKey) throw new Error('Recognition failed: stored PDF could not be found.');
+    await access(r.storageKey).catch(()=>{throw new Error('Recognition failed: stored PDF could not be found.');});
+    if(retry){
+      r.extracted={}; r.confidence={}; r.vendorMatch={}; r.poMatch={status:'PO Not Found',summary:'Not processed',lines:[]}; r.draftBill={}; r.billId='';
+      r.exceptions=(r.exceptions||[]).filter(e=>e.type==='Duplicate Upload');
+      r.processingDetails={...(r.processingDetails||{}),retryCount:Number(r.processingDetails?.retryCount||0)+1,errorCode:'',errorMessage:'',errorDetails:''};
+    }
+    const result=await invoiceRecognitionService.processIncomingDocument(documentId);
+    if(result.status==='Failed') throw new Error(`Recognition failed: ${result.processingError||result.processingDetails?.errorMessage||'unknown error'}`);
+    return result;
+  } finally { activeRecognitionDocuments.delete(documentId); }
 }
 const documentRecognitionEngine = new DocumentRecognitionEngine({
   processDocument: buildIncomingRecord,
@@ -944,14 +965,15 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='POST'&&pathname==='/api/ap/incoming-documents'){ const b=await body(req); return json(res,202,await receiveIncomingDocument(b)); }
  if(method==='POST'&&pathname==='/api/ap/incoming-documents/email'){ const b=await body(req); return json(res,202,await receiveIncomingDocument({...b,source:'Email Inbox',fileName:b.attachmentName||'email-invoice.pdf'})); }
  if(method==='GET'&&pathname==='/api/ap/incoming-documents/tables') return json(res,200,{IncomingDocuments,documentPages,recognitionRuns,DocumentFields,recognizedLineItems,vendorMatchCandidates,poMatchResults,validationResults,reviewCorrections,documentAuditLog,modelVersions,vendorRecognitionProfiles,DocumentFieldCoordinates,VendorLearningProfiles,RecognitionCorrections});
- if(method==='POST'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/process')){ const id=pathname.split('/').at(-2); try{return json(res,200,await processIncomingInvoice(id));}catch(e){return json(res,400,{error:e.message});} }
- if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/recognition')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); return json(res,200,{id:r.id,status:r.status,extracted:r.extracted,lines:r.extracted?.lines||[],vendorMatch:r.vendorMatch,poMatch:r.poMatch,accountingValidation:r.accountingValidation,processingDetails:r.processingDetails,normalizedRecognition:r.normalizedRecognition}); }
- if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/status')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); return json(res,200,{id:r.id,status:r.status,processingStatus:r.processingStatus,processingDetails:r.processingDetails,extracted:r.extracted,confidence:r.confidence}); }
- if(method==='POST'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/retry-recognition')){ const id=pathname.split('/').at(-2); try{return json(res,200,await processIncomingInvoice(id,{retry:true}));}catch(e){return json(res,400,{error:e.message});} }
+ if(method==='POST'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/process')){ const id=pathname.split('/').at(-2); try{enqueueIncomingRecognition(id,{priority:true}); return json(res,202,apIncomingVendorBills.find(x=>x.id===id));}catch(e){return json(res,e.statusCode||400,{code:e.code||'RECOGNITION_FAILED',message:e.message,error:e.message});} }
+ if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/recognition')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); return json(res,200,{id:r.id,status:r.status,extracted:r.status==='Processing'?{}:r.extracted,lines:r.status==='Processing'?[]:(r.extracted?.lines||[]),vendorMatch:r.status==='Processing'?{}:r.vendorMatch,poMatch:r.poMatch,accountingValidation:r.accountingValidation,processingDetails:r.processingDetails,normalizedRecognition:r.status==='Processing'?null:r.normalizedRecognition}); }
+ if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/status')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); return json(res,200,{id:r.id,status:r.status,processingStatus:r.processingStatus,processingDetails:r.processingDetails,extracted:r.status==='Processing'?{}:r.extracted,confidence:r.status==='Processing'?{}:r.confidence}); }
+ if(method==='POST'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/retry-recognition')){ const id=pathname.split('/').at(-2); try{const r=apIncomingVendorBills.find(x=>x.id===id); if(r){ r.status='Uploaded'; r.processingStatus='Uploaded'; r.processingError=''; r.recognitionComplete=false; } enqueueIncomingRecognition(id,{priority:true}); return json(res,202,r);}catch(e){return json(res,e.statusCode||400,{code:e.code||'RECOGNITION_FAILED',message:e.message,error:e.message});} }
  if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')&&pathname.endsWith('/file')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r||!r.storageKey) return json(res,404,{error:'File record missing'}); try{await access(r.storageKey); const st=await stat(r.storageKey); const range=req.headers.range; res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition',`inline; filename="${r.originalFileName||r.fileName||'invoice.pdf'}"`); res.setHeader('Accept-Ranges','bytes'); if(range){const [a,b]=range.replace(/bytes=/,'').split('-'); const start=Number(a||0), end=Math.min(Number(b||st.size-1),st.size-1); res.writeHead(206,{'Content-Range':`bytes ${start}-${end}/${st.size}`,'Content-Length':end-start+1}); createReadStream(r.storageKey,{start,end}).pipe(res);} else {res.writeHead(200,{'Content-Length':st.size}); createReadStream(r.storageKey).pipe(res);} return;}catch(e){console.error('Incoming document file access failed',id,e.message); return json(res,404,{error:'Storage object missing'});} }
  if(method==='GET'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); return json(res,200,r); }
- if(method==='PUT'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); const b=await body(req); const before={...r.extracted}; Object.assign(r.extracted,b.extracted||{}); Object.assign(r.draftBill,b.draftBill||{}); r.status=b.status||r.status; Object.entries(b.extracted||{}).forEach(([field,correct])=>{if(String(before[field]??'')!==String(correct??'')) RecognitionCorrections.push({id:`CORR-${RecognitionCorrections.length+1}`,incomingDocumentId:r.id,vendorId:r.vendorMatch?.vendorId,fieldName:field,originalValue:before[field],correctedValue:correct,originalCoordinates:r.confidence?.[field]?.source,originalConfidence:r.confidence?.[field]?.confidence,correctionType:'User Edit',correctedBy:b.user||'ap.clerk',correctedAt:new Date().toISOString(),layoutFingerprint:r.fileHash,appliedToProfile:true,profileVersion:1});}); r.auditTrail.push({date:new Date().toISOString(),user:b.user||'ap.clerk',action:'Correction',details:'User corrected extracted values for AI learning.'}); return json(res,200,r); }
- if(method==='POST'&&pathname.endsWith('/create-bill')&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); if(r.billId) return json(res,200,{billId:r.billId,bill:serializeApDoc(apDocuments.find(d=>d.id===r.billId))}); const recon=incomingInvoiceReconciliation(r); if(!recon.matches) return json(res,400,{error:`Invoice total does not match the detail lines. Invoice Total: ${recon.invoiceTotal.toFixed(2)} Calculated From Lines: ${recon.calculatedInvoiceTotal.toFixed(2)} Difference: ${recon.difference.toFixed(2)}`}); if(r.exceptions.some(e=>e.type==='Duplicate Invoice')&&!((await body(req)).overrideDuplicate)) return json(res,400,{error:'Potential Duplicate Invoice Detected'}); const d={...r.draftBill,type:'Bill',amount:Number(r.extracted?.grossInvoiceAmount||r.draftBill.amount||0),balance:Number(r.extracted?.grossInvoiceAmount||r.draftBill.balance||0),id:`BILL-${String(apDocuments.length+1001).padStart(4,'0')}`,status:'Draft',source:'Incoming Documents',incomingDocumentId:r.id,fileHash:r.fileHash,attachmentName:r.originalFileName||r.fileName,approvals:[],history:[]}; apDocuments.push(d); r.billId=d.id; r.status='CONVERTED'; r.processingStatus='CONVERTED'; r.auditTrail.push({date:new Date().toISOString(),user:'ap.clerk',action:'Bill Creation',details:`AP Bill draft ${d.id} created.`}); return json(res,201,{billId:d.id,bill:serializeApDoc(d)}); }
+ if(method==='DELETE'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const idx=apIncomingVendorBills.findIndex(x=>x.id===id); if(idx<0) return json(res,404,{error:'Incoming document not found'}); const r=apIncomingVendorBills[idx]; recognitionQueue.splice(0,recognitionQueue.length,...recognitionQueue.filter(x=>x!==id)); if(activeRecognitionDocuments.has(id)) return json(res,409,{code:'RECOGNITION_ALREADY_PROCESSING',message:'Invoice recognition is already in progress.'}); if(r.billId) return json(res,400,{error:'Converted documents cannot be deleted from incoming documents.'}); if(r.storageKey) await rm(r.storageKey,{force:true}).catch(()=>{}); documentAuditLog.push({documentId:id,event:'Incoming Document Deleted',message:'Incoming document, PDF, recognized data, and review history removed.',createdAt:new Date().toISOString()}); apIncomingVendorBills.splice(idx,1); return json(res,200,{ok:true,id}); }
+ if(method==='PUT'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); const b=await body(req); const before={...r.extracted}; Object.assign(r.extracted,b.extracted||{}); const lineSubtotal=(r.extracted.lines||[]).reduce((sum,l)=>sum+Number((l.extendedAmount??(Number(l.qty||0)*Number(l.unitPrice||0)))||0),0); const serverTotal=Number((lineSubtotal-Number(r.extracted.discount||0)+Number(r.extracted.taxAmount||0)+Number(r.extracted.freightAmount||0)+Number(r.extracted.miscellaneousCharges||0)).toFixed(2)); if(Number(r.extracted.grossInvoiceAmount||0)!==serverTotal){ r.validationWarnings=[...(r.validationWarnings||[]),{field:'grossInvoiceAmount',message:'Client invoice total differed from server calculation; server value was used.'}]; } r.extracted.subtotal=Number(lineSubtotal.toFixed(2)); r.extracted.grossInvoiceAmount=serverTotal; r.extracted.totalAmount=serverTotal; r.extracted.amountDue=Number((serverTotal-Number(r.extracted.prepaymentApplied||0)).toFixed(2)); Object.assign(r.draftBill,b.draftBill||{}); r.status=b.status||r.status; Object.entries(b.extracted||{}).forEach(([field,correct])=>{if(String(before[field]??'')!==String(correct??'')) RecognitionCorrections.push({id:`CORR-${RecognitionCorrections.length+1}`,incomingDocumentId:r.id,vendorId:r.vendorMatch?.vendorId,fieldName:field,originalValue:before[field],correctedValue:correct,originalCoordinates:r.confidence?.[field]?.source,originalConfidence:r.confidence?.[field]?.confidence,correctionType:'User Edit',correctedBy:b.user||'ap.clerk',correctedAt:new Date().toISOString(),layoutFingerprint:r.fileHash,appliedToProfile:true,profileVersion:1});}); r.auditTrail.push({date:new Date().toISOString(),user:b.user||'ap.clerk',action:'Correction',details:'User corrected extracted values for AI learning.'}); return json(res,200,r); }
+ if(method==='POST'&&pathname.endsWith('/create-bill')&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').at(-2); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); if(r.billId) return json(res,200,{billId:r.billId,bill:serializeApDoc(apDocuments.find(d=>d.id===r.billId))}); const recon=incomingInvoiceReconciliation(r); if(!recon.matches) return json(res,400,{error:`Invoice total does not match the detail lines. Invoice Total: ${recon.invoiceTotal.toFixed(2)} Calculated From Lines: ${recon.calculatedInvoiceTotal.toFixed(2)} Difference: ${recon.difference.toFixed(2)}`}); if(r.exceptions.some(e=>e.type==='Duplicate Invoice')&&!((await body(req)).overrideDuplicate)) return json(res,400,{error:'Potential Duplicate Invoice Detected'}); const d={...r.draftBill,type:'Bill',amount:Number(r.extracted?.grossInvoiceAmount||r.draftBill.amount||0),balance:Number(r.extracted?.grossInvoiceAmount||r.draftBill.balance||0),id:`BILL-${String(apDocuments.length+1001).padStart(4,'0')}`,status:'Draft',source:'Incoming Documents',incomingDocumentId:r.id,fileHash:r.fileHash,attachmentName:r.originalFileName||r.fileName,approvals:[],history:[]}; apDocuments.push(d); r.billId=d.id; r.status='Converted'; r.processingStatus='Converted'; r.auditTrail.push({date:new Date().toISOString(),user:'ap.clerk',action:'Bill Creation',details:`AP Bill draft ${d.id} created.`}); return json(res,201,{billId:d.id,bill:serializeApDoc(d)}); }
 
  // AP APIs
  if(method==='GET'&&pathname==='/api/ap/vendors') return json(res,200,vendors);
@@ -1219,4 +1241,16 @@ if(method==='POST'&&pathname==='/api/ar/documents/post'){
  if(method==='GET'&&pathname==='/api/gl/journal-entries') return json(res,200,journalEntries);
  return json(res,404,{error:'Not found'});
  }catch(e){return json(res,400,{error:e.message});}});
+console.log("[Document AI Config]", {
+  provider: process.env.DOCUMENT_AI_PROVIDER || null,
+  traceEnabled: process.env.AP_TRACE_INVOICE_RECOGNITION === "1",
+  azureEndpointConfigured: Boolean(
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT
+  ),
+  azureKeyConfigured: Boolean(
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
+  ),
+  azureModel:
+    process.env.AZURE_DOCUMENT_INTELLIGENCE_MODEL || null,
+});
 server.listen(process.env.PORT||3000);
