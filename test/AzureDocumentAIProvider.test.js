@@ -6,6 +6,8 @@ test('Azure provider uses the official REST SDK package and no raw fetch transpo
   const source = await readFile(new URL('../services/document-ai/AzureDocumentAIProvider.js', import.meta.url), 'utf8');
   assert.match(source, /@azure-rest\/ai-document-intelligence/);
   assert.doesNotMatch(source, /@azure\/ai-document-intelligence/);
+  assert.doesNotMatch(source, /@azure\/core-auth/);
+  assert.match(source, /base64Source/);
   assert.doesNotMatch(source, /fetch\s*\(/);
   assert.doesNotMatch(source, /retryFetch/);
 });

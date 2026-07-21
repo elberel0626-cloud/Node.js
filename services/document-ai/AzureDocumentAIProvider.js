@@ -1,5 +1,4 @@
 import DocumentIntelligence, { getLongRunningPoller, isUnexpected } from '@azure-rest/ai-document-intelligence';
-import { AzureKeyCredential } from '@azure/core-auth';
 import { DocumentAIProvider } from './DocumentAIProvider.js';
 
 const shouldTrace=()=>['1','true','yes'].includes(String(process.env.AP_TRACE_INVOICE_RECOGNITION||'').toLowerCase());
@@ -22,14 +21,14 @@ export class AzureDocumentAIProvider extends DocumentAIProvider {
   }
   assertConfigured(){ if(!this.endpoint||!this.key) throw new Error('Azure Document Intelligence startup validation failed: AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY are required.'); }
   getClient(){
-    if(!this.client) this.client=DocumentIntelligence(this.endpoint,new AzureKeyCredential(this.key),{apiVersion:this.apiVersion});
+    if(!this.client) this.client=DocumentIntelligence(this.endpoint,{key:this.key},{apiVersion:this.apiVersion});
     return this.client;
   }
   async analyzeInvoice(document,mimeType='application/pdf'){
-    this.assertConfigured(); const started=Date.now(); const client=this.getClient(); const requestHeaders={'Content-Type':'application/pdf','Ocp-Apim-Subscription-Key':this.key};
+    this.assertConfigured(); const started=Date.now(); const client=this.getClient(); const base64Source=Buffer.from(document).toString('base64'); const requestHeaders={'Content-Type':'application/json','Ocp-Apim-Subscription-Key':this.key};
     console.log('[invoice-recognition-trace] azure-sdk-call', { transport:'@azure-rest/ai-document-intelligence', method:'POST', endpoint:this.endpoint, apiVersion:this.apiVersion, model:this.model, requestHeaders:sanitizeRequestHeaders(requestHeaders) });
-    logTrace('azure-request', { called:true, transport:'@azure-rest/ai-document-intelligence', method:'POST', endpoint:this.endpoint, apiVersion:this.apiVersion, model:this.model, mimeType:'application/pdf', bytes:document?.length||0, requestHeaders:sanitizeRequestHeaders(requestHeaders) });
-    const initialResponse=await client.path('/documentModels/{modelId}:analyze', this.model).post({ contentType:'application/pdf', body:document });
+    logTrace('azure-request', { called:true, transport:'@azure-rest/ai-document-intelligence', method:'POST', endpoint:this.endpoint, apiVersion:this.apiVersion, model:this.model, mimeType:'application/json', bytes:document?.length||0, requestHeaders:sanitizeRequestHeaders(requestHeaders) });
+    const initialResponse=await client.path('/documentModels/{modelId}:analyze', this.model).post({ contentType:'application/json', body:{base64Source} });
     logAzureExchange({ method:requestMethod(initialResponse,'POST'), requestUrl:requestUrl(initialResponse,this.endpoint), apiVersion:this.apiVersion, model:this.model, requestHeaders:sanitizeRequestHeaders(requestHeaders), httpStatus:initialResponse.status, responseHeaders:headerObject(initialResponse.headers), responseBody:responseBody(initialResponse) });
     if(isUnexpected(initialResponse)){ const body=responseBody(initialResponse); const error=new Error(`Azure Document Intelligence request failed: ${initialResponse.status}${body?.error?.code?` ${body.error.code}`:''}${body?.error?.message?`: ${body.error.message}`:''}`); error.azureDiagnostics={called:true,endpoint:this.endpoint,requestUrl:requestUrl(initialResponse,this.endpoint),model:this.model,httpStatus:initialResponse.status,providerRequestId:initialResponse.headers?.['apim-request-id']||initialResponse.headers?.['x-ms-request-id']||'',responseEmpty:!body,errorCode:body?.error?.code||'',errorMessage:body?.error?.message||'',raw:body}; throw error; }
     const poller=getLongRunningPoller(client, initialResponse);
