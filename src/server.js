@@ -59,8 +59,10 @@ const financialPeriods = [];
 const periodHistory = [];
 const invoiceEmailHistory = [];
 const runtimeEmailSettings = {};
+const approvalEmailOutbox = [];
 const workflowUsers = [
-  { id: 'admin', name: 'System Administrator', roles: ['Admin', 'AP Manager', 'Controller', 'CFO'] },
+  { id: 'admin', name: 'System Administrator', email: 'admin@local', status: 'Active', roles: ['Admin', 'AP Manager', 'Controller', 'CFO'] },
+  { id: 'ebu.damiranbazar', name: 'Ebu Damiranbazar', email: 'Ebud@MRprint.com', status: 'Active', roles: ['Procurement Approver'] },
   { id: 'ap.manager', name: 'AP Manager', roles: ['AP Manager'] },
   { id: 'controller', name: 'Controller', roles: ['Controller'] },
   { id: 'cfo', name: 'CFO', roles: ['CFO'] },
@@ -222,7 +224,9 @@ const documentRecognitionEngine = new DocumentRecognitionEngine({
 });
 function incomingDashboard(){ const total=apIncomingVendorBills.length; const exceptions=apIncomingVendorBills.filter(r=>r.exceptions.length).length; const touchless=total?Math.round((apIncomingVendorBills.filter(r=>!r.exceptions.length).length/total)*100):0; return {invoicesProcessed:total,touchlessProcessingPct:touchless,averageProcessingTime:'8.4s',exceptionRate:total?Math.round((exceptions/total)*100):0,duplicateInvoicesPrevented:apIncomingVendorBills.flatMap(r=>r.exceptions).filter(e=>e.type==='Duplicate Invoice').length,approvalBottlenecks:apDocuments.filter(d=>d.status==='Pending Approval').length,openExceptions:exceptions,monthlyApSpend:apDocuments.filter(d=>d.type==='Bill'&&d.posted).reduce((s,d)=>s+Number(d.amount||0),0)}; }
 const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
-const isAuthenticated=(req)=>/erp_session=admin/.test(String(req.headers.cookie||''));
+const sessionUserId=req=>decodeURIComponent((String(req.headers.cookie||'').match(/(?:^|;\s*)erp_session=([^;]+)/)||[])[1]||'');
+const authenticatedUser=req=>workflowUsers.find(u=>u.id===sessionUserId(req)&&u.status!=='Inactive');
+const isAuthenticated=req=>!!authenticatedUser(req);
 const requireAuthenticated=(req)=>{ if(!isAuthenticated(req)) throw new Error('Authentication required'); };
 const body=(req)=>new Promise((resolve,reject)=>{let r='';req.on('data',c=>r+=c);req.on('end',()=>{try{resolve(r?JSON.parse(r):{});}catch{reject(new Error('Invalid JSON'));}});req.on('error',reject);});
 const POSTING_ACCOUNTS={arCash:'1079',apCash:'1084',accountsReceivable:'1210',accountsPayable:'2020',apTrade:'2010',poRni:'2020',vendorDeposit:'1960',customerDeposits:'2050',returnsAllowances:'4070',bankFees:'6060',defaultSalesRevenue:'4008'};
@@ -615,11 +619,11 @@ function postJE(doc,reverse=false){
   if(reverse) lines=lines.map(l=>({...l,debit:l.credit,credit:l.debit,sourceReference:doc.id}));
   return createPostedJournal({module:'AR',description:`${reverse?'Reversal of':'Auto from'} ${doc.id}`,postPeriod,transactionDate:postDate,sourceRef:doc.id,lines,reversalOf:reverse?doc.id:''});
 }
-function currentUser(){ return workflowUsers.find(u=>u.id==='admin'); }
+function currentUser(req){ return authenticatedUser(req)||workflowUsers.find(u=>u.id==='admin'); }
 function userCanApprove(userId,approval){
   const user=workflowUsers.find(u=>u.id===userId)||currentUser();
-  const assigned=[approval.assignedToUser,approval.delegatedToUser,approval.backupApproverUser].filter(Boolean);
-  return (user.roles||[]).includes('Admin')||assigned.includes(user.id)||assigned.includes(user.name);
+  const assigned=approval.delegatedToUser||approval.assignedToUser;
+  return (user.roles||[]).includes('Admin')||assigned===user.id;
 }
 function addNotification({userId='admin',type,reference,title,message}){
   const n={id:`NTF-${String(notificationSeq++).padStart(6,'0')}`,userId,type,reference,title,message,read:false,createdDate:new Date().toISOString()};
@@ -682,7 +686,7 @@ function evaluateApprovalRules(doc){
   const amount=Number(doc.amount||0); const expenseAccounts=new Set((doc.lines||[]).map(l=>String(l.expenseAccount||l.account||'')));
   return approvalRules.filter(r=>r.active!==false&&(r.module||'AP')==='AP'&&amount>=Number(r.amountFrom||0)&&(r.amountTo==null||amount<=Number(r.amountTo))&&ruleFieldMatches(r.vendor,doc.vendorId)&&ruleFieldMatches(r.branch,doc.branch)&&ruleFieldMatches(r.department,doc.department)&&(!r.expenseAccount||r.expenseAccount==='Any'||(r.expenseAccount==='Capital Asset'?[...expenseAccounts].some(isCapitalAccount):expenseAccounts.has(String(r.expenseAccount))))).sort((a,b)=>Number(a.approvalLevel||1)-Number(b.approvalLevel||1)||Number(a.priority||0)-Number(b.priority||0));
 }
-function apApprovalRequired(doc){ return doc.type==='Bill'&&apBillExceptions(doc).length>0; }
+function apApprovalRequired(doc){ const vendor=vendors.find(v=>v.id===doc.vendorId); return doc.type==='Bill'&&(!!vendor?.assignedProcurementPersonUserId||apBillExceptions(doc).length>0); }
 function apLineAmount(line){ const qty=Number(line.qty??line.quantity??1); const unit=Number(line.unitCost??line.cost??0); const ext=Number(line.extendedCost??(qty*unit)); return ext-Number(line.discountAmount||0)+Number(line.tax||line.taxAmount||0); }
 function apDetailTotal(doc){ return Number((doc.lines||[]).reduce((t,l)=>t+apLineAmount(l),0).toFixed(2)); }
 function validateApBillAmount(doc){ if(doc.type==='Bill'&&(doc.lines||[]).length){ const detail=apDetailTotal(doc); const header=Number(Number(doc.amount||0).toFixed(2)); if(Math.abs(header-detail)>0.01) throw new Error('Bill amount does not match detail lines.'); } }
@@ -707,8 +711,9 @@ function approvalQueueRows(view='All',userId='admin'){
   return apDocuments.filter(d=>d.type==='Bill'&&['Pending Approval','Approved','Rejected','Information Requested'].includes(d.status)).map(d=>({billNumber:d.id,vendor:d.vendorName,invoiceNumber:d.vendorRef||d.invoiceNumber||'',billDate:d.date,amount:Number(d.amount||0),dueDate:d.dueDate,currentApprover:currentApproverLabel(d),approvalStatus:d.status,daysWaiting:daysWaiting(d),priority:Math.min(...(d.approvals||[]).map(a=>Number(a.priority||99)),99),escalated:(d.approvals||[]).some(a=>a.escalated),department:d.department||'Finance',createdBy:d.createdBy||'ap.clerk',approvals:d.approvals||[]})).filter(r=>{
     if(view==='My Approvals'||view==='My Pending Approvals') return r.approvals.some(a=>['Pending','Information Requested'].includes(a.status)&&userCanApprove(userId,a));
     if(view==='Pending'||view==='Pending Approvals'||view==='All Pending Approvals') return r.approvalStatus==='Pending Approval'||r.approvalStatus==='Information Requested';
-    if(view==='Approved') return r.approvalStatus==='Approved';
-    if(view==='Rejected') return r.approvalStatus==='Rejected';
+    if(view==='Approved') return r.approvalStatus==='Approved'&&r.approvals.some(a=>a.assignedToUser===userId||a.approvedBy===userId);
+    if(view==='Rejected') return r.approvalStatus==='Rejected'&&r.approvals.some(a=>a.assignedToUser===userId||a.rejectedBy===userId);
+    if(view==='Requested Information') return r.approvalStatus==='Information Requested'&&r.approvals.some(a=>a.assignedToUser===userId);
     if(view==='Escalated') return r.escalated;
     return true;
   });
@@ -719,17 +724,16 @@ function approvalDashboard(userId='admin'){
   const byUser={}; completed.forEach(a=>{byUser[a.userName]=Number(byUser[a.userName]||0)+1;});
   return {pending:rows.filter(r=>['Pending Approval','Information Requested'].includes(r.approvalStatus)).length,myApprovals:approvalQueueRows('My Approvals',userId).length,rejected:rows.filter(r=>r.approvalStatus==='Rejected').length,escalated:rows.filter(r=>r.escalated).length,averageApprovalTime:rows.length?Number((rows.reduce((s,r)=>s+Number(r.daysWaiting||0),0)/rows.length).toFixed(1)):0,approvalsByUser:Object.entries(byUser).map(([user,count])=>({user,count})),approvalsByDepartment:[{department:'Finance',count:rows.length}]};
 }
-function submitBillForApproval(doc,{userId='admin',duplicateOverrideReason=''}={}){
+function submitBillForApproval(doc,{userId='admin',duplicateOverrideReason='',approvalBaseUrl=''}={}){
   if(doc.type!=='Bill') throw new Error('Only AP bills use invoice approval workflow');
   if(!['Saved','Rejected','Information Requested'].includes(doc.status)) throw new Error('Only Saved, Rejected, or Information Requested bills can be submitted for approval');
   const errors=approvalValidationErrors(doc); if(errors.length) throw new Error(errors.join('; '));
+  const vendor=vendors.find(v=>v.id===doc.vendorId); const approver=workflowUsers.find(u=>u.id===vendor?.assignedProcurementPersonUserId&&u.status!=='Inactive');
+  if(!approver) throw new Error('No procurement approver is assigned to this vendor. Update the Vendor Profile before sending the bill for approval.');
   const dupes=duplicateBills(doc); if(dupes.length&&!duplicateOverrideReason) throw new Error(`Potential duplicate invoice found: ${dupes.map(d=>d.id).join(', ')}. Enter an override reason to submit.`);
-  const old=doc.status; const rules=evaluateApprovalRules(doc);
-  if(!rules.length){ doc.approvalRequired=false; doc.approvalStatus='Approved'; doc.billApprovalStatus='Approved'; doc.status='Approved'; addWorkflowAudit({billId:doc.id,action:'Auto Approve',userId,fromStatus:old,toStatus:doc.status,comments:isThreeWayMatchedWithinTolerance(doc)?'3-way match within tolerance; PO and receipt controls satisfied.':'No approval exception was found.'}); return doc; }
-  const firstLevel=Math.min(...rules.map(r=>Number(r.approvalLevel||1))); doc.approvals=rules.map((r,i)=>createApprovalRecord(doc,r,i,firstLevel)); doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; doc.approvalStatus='Pending Approval'; doc.approvalExceptionReasons=apBillExceptions(doc); doc.submittedBy=userId; doc.submittedDate=new Date().toISOString(); doc.duplicateOverrideReason=duplicateOverrideReason||''; doc.duplicateWarning=dupes.map(d=>d.id);
-  addWorkflowAudit({billId:doc.id,action:'Submit',userId,fromStatus:old,toStatus:doc.status,comments:duplicateOverrideReason||'',metadata:{rules:rules.map(r=>r.ruleId),duplicates:doc.duplicateWarning}});
-  const first=activeApproval(doc); if(first) addNotification({userId:first.assignedToUser,type:'Submitted',reference:doc.id,title:`AP bill ${doc.id} requires approval`,message:`${doc.vendorName} ${doc.vendorRef||''} for ${doc.amount}`});
-  return doc;
+  const old=doc.status; const now=new Date().toISOString(); doc.approvalRequired=true; doc.approvals=[{approvalId:`APRREC-${String(approvalSeq++).padStart(6,'0')}`,billId:doc.id,approvalLevel:1,assignedTo:approver.name,assignedToUser:approver.id,status:'Pending',dateAssigned:now,comments:''}]; doc.assignedApproverUserId=approver.id; doc.assignedApproverName=approver.name; doc.assignedApproverEmail=approver.email; doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; doc.approvalStatus='Pending Approval'; doc.submittedBy=userId; doc.submittedDate=now; doc.duplicateOverrideReason=duplicateOverrideReason||''; doc.duplicateWarning=dupes.map(d=>d.id);
+  addWorkflowAudit({billId:doc.id,action:'Submit',userId,fromStatus:old,toStatus:doc.status,comments:duplicateOverrideReason||'',metadata:{assignedApproverUserId:approver.id,duplicates:doc.duplicateWarning}}); addNotification({userId:approver.id,type:'Submitted',reference:doc.id,title:`AP bill ${doc.id} requires approval`,message:`${doc.vendorName} ${doc.vendorRef||''} for ${doc.amount}`});
+  const link=`${approvalBaseUrl}/ap/approvals/${encodeURIComponent(doc.id)}`; approvalEmailOutbox.push({to:approver.email,name:approver.name,billId:doc.id,link,subject:`AP bill ${doc.id} requires approval`,queuedDate:now}); return {doc,approver,link};
 }
 function approveBill(doc,{userId='admin',comments=''}={}){
   const approval=activeApproval(doc); if(!approval) throw new Error('No pending approval step found'); if(!userCanApprove(userId,approval)) throw new Error('Only assigned approvers or admins can approve this bill');
@@ -764,7 +768,7 @@ function delegateApproval(doc,{userId='admin',delegatedToUser,comments=''}={}){
   approval.originalApprover=approval.originalApprover||approval.assignedTo; approval.delegatedTo=delegate.name; approval.delegatedToUser=delegate.id; approval.delegatedDate=new Date().toISOString(); approval.comments=comments||approval.comments||''; addWorkflowAudit({billId:doc.id,action:'Delegate',userId,fromStatus:doc.status,toStatus:doc.status,comments,metadata:{delegatedTo:delegate.id}}); addNotification({userId:delegate.id,type:'Delegated',reference:doc.id,title:`AP bill ${doc.id} delegated to you`,message:comments||'Delegated approval task'}); return doc;
 }
 function reassignApproval(doc,{userId='admin',assignedToUser,comments=''}={}){
-  const user=currentUser(); if(!(user.roles||[]).includes('Admin')) throw new Error('Only admins can reassign approvals'); const approval=activeApproval(doc); if(!approval) throw new Error('No pending approval step found'); const assignee=workflowUsers.find(u=>u.id===assignedToUser||u.name===assignedToUser); if(!assignee) throw new Error('New approver is required');
+  const user=workflowUsers.find(u=>u.id===userId); if(!(user?.roles||[]).includes('Admin')) throw new Error('Only admins can reassign approvals'); const approval=activeApproval(doc); if(!approval) throw new Error('No pending approval step found'); const assignee=workflowUsers.find(u=>u.id===assignedToUser||u.name===assignedToUser); if(!assignee) throw new Error('New approver is required');
   approval.assignedTo=assignee.name; approval.assignedToUser=assignee.id; approval.delegatedTo=''; approval.delegatedToUser=''; approval.comments=comments||approval.comments||''; addWorkflowAudit({billId:doc.id,action:'Reassign',userId,fromStatus:doc.status,toStatus:doc.status,comments,metadata:{assignedTo:assignee.id}}); addNotification({userId:assignee.id,type:'Delegated',reference:doc.id,title:`AP bill ${doc.id} assigned to you`,message:comments||'Approval task reassigned'}); return doc;
 }
 function runEscalations(userId='admin'){
@@ -817,17 +821,9 @@ function syncApPaymentReview(doc){
 }
 function applyApSaveWorkflow(doc,userId='system'){
   if(!doc||doc.type!=='Bill'||doc.status==='Draft') return doc;
-  const old=doc.status;
   doc.approvalExceptionReasons=apBillExceptions(doc);
-  doc.approvalRequired=doc.approvalExceptionReasons.length>0;
-  if(!doc.approvalRequired&&['Saved','Pending Approval','Rejected','Information Requested'].includes(doc.status)&&billHasPdf(doc)){
-    doc.status='Approved'; doc.billApprovalStatus='Approved'; doc.approvalStatus='Approved'; doc.approvals=[];
-    addWorkflowAudit({billId:doc.id,action:'Auto Approve',userId,fromStatus:old,toStatus:doc.status,comments:isThreeWayMatchedWithinTolerance(doc)?'3-way match within tolerance; no approval routing required.':'No approval exception was found.'});
-  } else if(doc.approvalRequired&&['Saved','Rejected','Information Requested'].includes(doc.status)&&billHasPdf(doc)) {
-    const rules=evaluateApprovalRules(doc); const firstLevel=rules.length?Math.min(...rules.map(r=>Number(r.approvalLevel||1))):1;
-    doc.approvals=rules.map((r,i)=>createApprovalRecord(doc,r,i,firstLevel)); doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; doc.approvalStatus='Pending Approval';
-    addWorkflowAudit({billId:doc.id,action:'Route Approval',userId,fromStatus:old,toStatus:doc.status,comments:doc.approvalExceptionReasons.join('; '),metadata:{rules:rules.map(r=>r.ruleId)}});
-  } else doc.billApprovalStatus=doc.status;
+  doc.approvalRequired=apApprovalRequired(doc);
+  if(['Saved','Rejected','Information Requested'].includes(doc.status)){doc.status='Saved';doc.billApprovalStatus='Saved';doc.approvalStatus='Saved';doc.approvals=[];}
   return doc;
 }
 function resetApprovalIfMaterialChange(doc,before,userId='system'){
@@ -926,8 +922,8 @@ async function serve(p,res){ if(p==='/app.js'||p==='/styles.css'){const c=await 
 
 const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; try{
  if(method==='GET'&&await serve(pathname,res)) return;
- if(method==='GET'&&pathname==='/api/auth/session') return isAuthenticated(req)?json(res,200,{authenticated:true,user:{id:'admin',name:'Administrator'}}):json(res,401,{error:'Authentication required'});
- if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req); if(b.username==='admin'&&b.password==='admin'){res.setHeader('Set-Cookie','erp_session=admin; HttpOnly; SameSite=Lax; Path=/'); return json(res,200,{ok:true});} return json(res,401,{error:'Invalid'});}
+ if(method==='GET'&&pathname==='/api/auth/session'){const user=authenticatedUser(req);return user?json(res,200,{authenticated:true,user:{id:user.id,name:user.name,email:user.email||'',roles:user.roles||[]}}):json(res,401,{error:'Authentication required'});}
+ if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req);const user=workflowUsers.find(u=>u.status!=='Inactive'&&(u.id===b.username||String(u.email||'').toLowerCase()===String(b.username||'').toLowerCase()));if(user&&b.password==='admin'){res.setHeader('Set-Cookie',`erp_session=${encodeURIComponent(user.id)}; HttpOnly; SameSite=Lax; Path=/`);return json(res,200,{ok:true,user:{id:user.id,name:user.name}});}return json(res,401,{error:'Invalid'});}
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers.map(enrichCustomer));
 
  if(method==='GET'&&pathname==='/api/tax/rates') return json(res,200,listTaxZoneVersions());
@@ -978,10 +974,10 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
 
  // AP APIs
  if(method==='GET'&&pathname==='/api/ap/vendors') return json(res,200,vendors);
- if(method==='POST'&&pathname==='/api/ap/vendors'){ const b=await body(req); const id=`VEND-${String(vendors.length+1001).padStart(4,'0')}`; const v={id,name:b.name,status:'Active',address:b.address||'',phone:b.phone||'',email:b.email||'',terms:b.terms||'NET30',taxId:b.taxId||'',currency:b.currency||'USD',paymentMethod:b.paymentMethod||'Check'}; vendors.push(v); return json(res,201,v); }
+ if(method==='POST'&&pathname==='/api/ap/vendors'){ const b=await body(req); const id=`VEND-${String(vendors.length+1001).padStart(4,'0')}`; const v={id,name:b.name,status:'Active',address:b.address||'',phone:b.phone||'',email:b.email||'',terms:b.terms||'NET30',taxId:b.taxId||'',currency:b.currency||'USD',paymentMethod:b.paymentMethod||'Check',assignedProcurementPersonUserId:b.assignedProcurementPersonUserId||''}; vendors.push(v); return json(res,201,v); }
  if(method==='PUT'&&pathname.startsWith('/api/ap/vendors/')){ const id=pathname.split('/').pop(); const v=vendors.find(x=>x.id===id); if(!v) return json(res,404,{error:'Vendor not found'}); Object.assign(v,await body(req)); return json(res,200,v); }
  if(method==='DELETE'&&pathname.startsWith('/api/ap/vendors/')){ const id=pathname.split('/').pop(); if(apDocuments.some(d=>d.vendorId===id)) return json(res,400,{error:'This vendor has transactions and cannot be deleted. Please inactivate the vendor instead.'}); const i=vendors.findIndex(v=>v.id===id); if(i<0) return json(res,404,{error:'Vendor not found'}); vendors.splice(i,1); return json(res,200,{ok:true}); }
- if(method==='GET'&&pathname==='/api/ap/approval-users') return json(res,200,workflowUsers);
+ if(method==='GET'&&pathname==='/api/ap/approval-users'){requireAuthenticated(req);return json(res,200,workflowUsers.filter(u=>u.status!=='Inactive').map(({id,name,email,status='Active',roles})=>({id,name,email,status,roles})));}
  if(method==='GET'&&pathname==='/api/ap/approval-thresholds') return json(res,200,apApprovalThresholds);
  if(method==='PUT'&&pathname==='/api/ap/approval-thresholds'){ Object.assign(apApprovalThresholds,await body(req)); return json(res,200,apApprovalThresholds); }
  if(method==='GET'&&pathname==='/api/ap/approval-rules') return json(res,200,approvalRules.filter(r=>(r.module||'AP')==='AP'));
@@ -989,13 +985,14 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='GET'&&pathname==='/api/ap/approval-escalations') return json(res,200,approvalEscalations);
  if(method==='GET'&&pathname==='/api/ap/approval-audit') return json(res,200,workflowAuditLog.filter(a=>!query.billId||a.billId===query.billId));
  if(method==='GET'&&pathname==='/api/notifications') return json(res,200,notifications.filter(n=>!query.userId||n.userId===query.userId));
- if(method==='GET'&&pathname==='/api/ap/approval-dashboard') return json(res,200,approvalDashboard(query.userId||'admin'));
- if(method==='GET'&&pathname==='/api/ap/approval-queue') return json(res,200,approvalQueueRows(query.view||'All',query.userId||'admin'));
+ if(method==='GET'&&pathname==='/api/ap/approval-dashboard'){requireAuthenticated(req);return json(res,200,approvalDashboard(currentUser(req).id));}
+ if(method==='GET'&&pathname==='/api/ap/approval-queue'){requireAuthenticated(req);const user=currentUser(req),view=query.view||'My Pending Approvals';return json(res,200,approvalQueueRows(view,user.id));}
+ if(method==='GET'&&pathname==='/api/ap/approval-email-outbox'){requireAuthenticated(req);if(!(currentUser(req).roles||[]).includes('Admin'))return json(res,403,{error:'Administrator access required'});return json(res,200,approvalEmailOutbox);}
  if(method==='POST'&&pathname==='/api/ap/approval-escalations/run'){ const applied=runEscalations('admin'); return json(res,200,{applied}); }
- if(method==='POST'&&pathname.startsWith('/api/ap/documents/')&&pathname.endsWith('/submit-approval')){ const id=pathname.split('/')[4]; const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const b=await body(req); const before=d.status; submitBillForApproval(d,{userId:b.userId||'admin',duplicateOverrideReason:b.duplicateOverrideReason||''}); const msg=d.status===before?'No approval is required for this bill.':'Bill submitted for approval.'; return json(res,200,{...serializeApDoc(d),message:msg}); }
- if(method==='POST'&&pathname.startsWith('/api/ap/documents/')&&pathname.endsWith('/approval-action')){ const id=pathname.split('/')[4]; const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const b=await body(req); const action=String(b.action||'').toLowerCase(); if(action==='approve') approveBill(d,b); else if(action==='reject') rejectBill(d,b); else if(action==='request-information') requestBillInfo(d,b); else if(action==='delegate') delegateApproval(d,b); else if(action==='reassign') reassignApproval(d,b); else if(action==='recall') recallBillApproval(d,b); else if(action==='approve-payment') approvePayment(d,b); else return json(res,400,{error:'Unknown approval action'}); return json(res,200,serializeApDoc(d)); }
+ if(method==='POST'&&pathname.startsWith('/api/ap/documents/')&&pathname.endsWith('/submit-approval')){requireAuthenticated(req);const id=pathname.split('/')[4];const d=apDocuments.find(x=>x.id===id);if(!d)return json(res,404,{error:'Not found'});const b=await body(req),user=currentUser(req),origin=`${req.headers['x-forwarded-proto']||'http'}://${req.headers['x-forwarded-host']||req.headers.host}`;const routed=submitBillForApproval(d,{userId:user.id,duplicateOverrideReason:b.duplicateOverrideReason||'',approvalBaseUrl:origin});const emailRecord=approvalEmailOutbox.at(-1);let emailWarning='';if(savedEmailSettings().configured){try{await sendInvoiceEmail({to:routed.approver.email,subject:`AP bill ${d.id} requires approval`,body:`Hello ${routed.approver.name},\n\nAP bill ${d.id} from ${d.vendorName} requires your approval.\n\nSign in to review: ${routed.link}`,attachments:[],settings:resolveSmtpSettings(runtimeEmailSettings)});emailRecord.status='Sent';emailRecord.sentDate=new Date().toISOString();}catch(error){emailRecord.status='Failed';emailRecord.error=formatSmtpError(error);emailWarning=` Approval email could not be sent: ${emailRecord.error}`;}}else emailRecord.status='Queued';return json(res,200,{...serializeApDoc(d),message:`Bill sent to ${routed.approver.name} for approval.${emailWarning}`,approvalLink:routed.link,emailStatus:emailRecord.status});}
+ if(method==='POST'&&pathname.startsWith('/api/ap/documents/')&&pathname.endsWith('/approval-action')){requireAuthenticated(req);const id=pathname.split('/')[4],d=apDocuments.find(x=>x.id===id);if(!d)return json(res,404,{error:'Not found'});const b={...(await body(req)),userId:currentUser(req).id},action=String(b.action||'').toLowerCase();if(action==='approve')approveBill(d,b);else if(action==='reject')rejectBill(d,b);else if(action==='request-information')requestBillInfo(d,b);else if(action==='delegate')delegateApproval(d,b);else if(action==='reassign')reassignApproval(d,b);else if(action==='recall')recallBillApproval(d,b);else return json(res,400,{error:'Unknown approval action'});return json(res,200,serializeApDoc(d));}
  if(method==='GET'&&pathname==='/api/ap/documents'){ let d=[...apDocuments]; if(query.type)d=d.filter(x=>x.type===query.type); if(query.vendorId)d=d.filter(x=>x.vendorId===query.vendorId); if(query.status)d=d.filter(x=>x.status===query.status); return json(res,200,d.map(serializeApDoc)); }
- if(method==='GET'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); return d?json(res,200,serializeApDoc(d)):json(res,404,{error:'Not found'}); }
+ if(method==='GET'&&pathname.startsWith('/api/ap/documents/')){const id=pathname.split('/').pop(),d=apDocuments.find(x=>x.id===id);if(!d)return json(res,404,{error:'Not found'});if(d.assignedApproverUserId){requireAuthenticated(req);const user=currentUser(req);if(!(user.roles||[]).includes('Admin')&&user.id!==d.assignedApproverUserId)return json(res,403,{error:'This bill is assigned to another approver.'});}return json(res,200,serializeApDoc(d));}
  if(method==='POST'&&pathname==='/api/ap/documents'){ const b=await body(req); if(Number(b.amount)<=0) return json(res,400,{error:['Payment','Prepayment'].includes(b.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.'}); validateApBillReferences({type:b.type||'Bill',...b}); const vendor=vendors.find(v=>v.id===b.vendorId); if(!vendor) return json(res,400,{error:'Vendor required'}); validateApBillAmount(b); const prefix=b.type==='Payment'?'PAY-AP':b.type==='Prepayment'?'PREPAY':b.type==='Debit Adjustment'?'DADJ':'BILL'; const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('AP',pp); const id=`${prefix}-${String(apDocuments.length+1001).padStart(4,'0')}`; const d={id,type:b.type||'Bill',vendorId:vendor.id,vendorName:vendor.name,date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,dueDate:b.dueDate||b.date,terms:b.terms||vendor.terms,status:b.ocrCreated?'Draft':(b.status||'Saved'),posted:false,hold:!!b.hold,amount:Number(b.amount||0),balance:Number(b.amount||0),method:b.method,checkNumber:b.checkNumber,paymentRef:b.paymentRef||'',vendorRef:b.vendorRef||b.invoiceNumber||'',invoiceNumber:b.invoiceNumber||b.vendorRef||'',invoicePdfAttached:!!b.invoicePdfAttached,attachmentName:b.attachmentName||'',attachments:b.attachments||[],branch:b.branch||'MAIN',department:b.department||'Finance',createdBy:b.createdBy||'ap.clerk',cashAccount:String(b.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],currency:b.currency||'USD',description:b.description||'',unappliedBalance:Number(b.amount||0),appliedAmount:0,applications:b.applications||[],history:b.history||[],approvals:b.approvals||[],lines:b.lines||[],source:'Manual'}; d.approvalRequired=apApprovalRequired(d); syncApPaymentReview(d); if(d.type==='Prepayment'){ d.status='Pending Approval'; d.approvalStatus='Pending Payment Approval'; } applyApSaveWorkflow(d,b.createdBy||'ap.clerk'); apDocuments.push(d); return json(res,201,serializeApDoc(d)); }
  if(method==='PUT'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); if(d.posted||['Open','Closed','Voided'].includes(d.status)) return json(res,400,{error:'Posted documents cannot be edited. Void or reverse the document instead.'}); const before=JSON.parse(JSON.stringify(d)); const b=await body(req); if(b.amount!==undefined&&Number(b.amount)<=0) return json(res,400,{error:['Payment','Prepayment'].includes(d.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.'}); validateApBillReferences({...d,...b}); delete b.postPeriod; delete b.posted; delete b.status; const nextPostDate=b.postDate||b.date||d.postDate||d.date; validatePeriodOpenForSave('AP',periodFromDate(nextPostDate)); validateApBillAmount({...d,...b}); Object.assign(d,b); d.invoiceNumber=d.invoiceNumber||d.vendorRef; d.invoicePdfAttached=!!(d.invoicePdfAttached||d.attachmentName||billHasPdf(d)); d.postPeriod=periodFromDate(d.postDate||d.date); if(['Rejected','Information Requested','Draft'].includes(before.status)) d.status='Saved'; d.approvalRequired=apApprovalRequired(d); syncApPaymentReview(d); resetApprovalIfMaterialChange(d,before,'admin'); applyApSaveWorkflow(d,'admin'); return json(res,200,serializeApDoc(d)); }
  if(method==='DELETE'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const i=apDocuments.findIndex(x=>x.id===id); if(i<0) return json(res,404,{error:'Not found'}); if(!['Saved','Rejected','Draft'].includes(apDocuments[i].status)) return json(res,400,{error:'Only Draft, Saved, or Rejected documents can be deleted'}); apDocuments.splice(i,1); return json(res,200,{ok:true}); }
