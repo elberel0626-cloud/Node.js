@@ -142,3 +142,23 @@ label.required::after{content:' *';color:#c62828;font-weight:700;font-size:12px}
 .grid-pagination span{min-width:100px;text-align:center;font-weight:600;color:#334155}.grid-pagination button:disabled{cursor:not-allowed;opacity:.5}
 .module-coming-soon{max-width:720px;margin:48px auto;text-align:center;padding:48px}.module-coming-soon h2{margin:0 0 8px;font-size:28px}.module-coming-soon p{margin:0;color:#64748b;font-size:18px}.credit-filter-bar{display:flex;gap:8px;flex-wrap:wrap}
 .journal-entry-screen .erp-header-grid{margin-bottom:12px}.journal-entry-screen #jeLines input{min-width:100px;width:100%}.journal-entry-screen #jeLines .je-account{min-width:90px}.je-totals{display:flex;justify-content:flex-end;gap:12px;margin-top:12px}.je-totals div{min-width:150px;background:#f8fbff;border:1px solid #dce6f3;border-radius:8px;padding:10px;display:grid;gap:4px}.je-totals span{color:#64748b;font-size:12px}.je-totals b{font-size:18px}.je-totals .err{color:#b91c1c}
+
+/* Compact New AP Bill workspace; keep wide line content inside its own scroller. */
+.new-ap-bill{min-width:0;max-width:100%;overflow-x:hidden;padding:8px}
+.new-ap-bill>.workflow-bar{margin-bottom:8px;padding:6px;gap:4px}
+.new-ap-bill>.workflow-bar .wf-step{padding:5px 8px;font-size:11px}
+.new-ap-bill .new-ap-bill-header{grid-template-columns:repeat(4,minmax(140px,1fr));gap:6px 10px;padding:8px;min-width:0}
+.new-ap-bill .new-ap-bill-header label{min-width:0}
+.new-ap-bill .new-ap-bill-header input,.new-ap-bill .new-ap-bill-header select{box-sizing:border-box;min-width:0;width:100%;height:26px}
+.new-ap-bill .erp-tabs{margin-top:7px;overflow-x:auto;white-space:nowrap}
+.new-ap-bill .tab-pane{min-width:0;padding:6px}
+.new-ap-bill .erp-line-actions{position:sticky;left:0;width:max-content;max-width:100%}
+.new-ap-bill .ap-bill-lines-scroll{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-inline:contain}
+.new-ap-bill .ap-bill-lines-scroll table{width:max-content;min-width:100%;white-space:nowrap}
+.new-ap-bill .ap-bill-lines-scroll input,.new-ap-bill .ap-bill-lines-scroll select{box-sizing:border-box;min-width:76px;max-width:150px;height:25px;padding:2px 4px}
+.new-ap-bill .ap-bill-lines-scroll .ln-desc{min-width:190px;max-width:240px}
+body:has(.new-ap-bill){overflow-x:hidden}
+body:has(.new-ap-bill) .erp-toolbar.sticky{position:sticky;top:0;z-index:20;margin-bottom:6px}
+@media(max-width:1100px){.new-ap-bill .new-ap-bill-header{grid-template-columns:repeat(3,minmax(135px,1fr))}}
+@media(max-width:760px){.new-ap-bill .new-ap-bill-header{grid-template-columns:repeat(2,minmax(130px,1fr))}}
+.new-ap-bill-summary{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;padding:7px 0 0}.new-ap-bill-summary span{display:grid;gap:2px;min-width:105px;background:#f8fafc;border:1px solid #d6deea;padding:5px 8px;font-size:11px}.new-ap-bill-summary b{font-size:14px;text-align:right}
