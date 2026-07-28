@@ -162,3 +162,23 @@ body:has(.new-ap-bill) .erp-toolbar.sticky{position:sticky;top:0;z-index:20;marg
 @media(max-width:1100px){.new-ap-bill .new-ap-bill-header{grid-template-columns:repeat(3,minmax(135px,1fr))}}
 @media(max-width:760px){.new-ap-bill .new-ap-bill-header{grid-template-columns:repeat(2,minmax(130px,1fr))}}
 .new-ap-bill-summary{display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap;padding:7px 0 0}.new-ap-bill-summary span{display:grid;gap:2px;min-width:105px;background:#f8fafc;border:1px solid #d6deea;padding:5px 8px;font-size:11px}.new-ap-bill-summary b{font-size:14px;text-align:right}
+/* New Bill scroll/stacking corrections. The document scrolls normally; only lines scroll sideways. */
+html:has(.new-ap-bill),body:has(.new-ap-bill){height:auto;min-height:100%;overflow-y:auto;overflow-x:clip}
+body:has(.new-ap-bill) #app{height:auto;min-height:100vh;overflow:visible}
+body:has(.new-ap-bill) .main,body:has(.new-ap-bill) .content,body:has(.new-ap-bill) #view{min-width:0;max-width:100%;overflow:visible}
+body:has(.new-ap-bill) .erp-lookup-panel.party-suggestions{z-index:30000!important;max-width:calc(100vw - 16px)}
+.new-ap-bill{overflow:visible;min-height:0;width:100%}
+.new-ap-bill .ap-bill-lines-scroll{display:block;overflow-x:auto;overflow-y:visible;max-width:100%}
+.new-ap-bill .compact-ap-lines{table-layout:auto;width:100%;min-width:760px}
+.new-ap-bill .compact-ap-lines th,.new-ap-bill .compact-ap-lines td{padding:3px 4px}
+.new-ap-bill .compact-ap-lines th:nth-child(2),.new-ap-bill .compact-ap-lines td:nth-child(2),
+.new-ap-bill .compact-ap-lines th:nth-child(8),.new-ap-bill .compact-ap-lines td:nth-child(8),
+.new-ap-bill .compact-ap-lines th:nth-child(n+9),.new-ap-bill .compact-ap-lines td:nth-child(n+9){display:none}
+.new-ap-bill .compact-ap-lines th:nth-child(10),.new-ap-bill .compact-ap-lines td:nth-child(10){display:table-cell}
+.new-ap-bill .compact-ap-lines .line-number{width:42px;text-align:center}
+.new-ap-bill .po-match-actions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.new-ap-bill .po-match-summary,.new-ap-bill .compact-bill-details{display:grid;grid-template-columns:repeat(3,minmax(140px,1fr));gap:6px 12px}
+.new-ap-bill .po-match-summary p,.new-ap-bill .compact-bill-details p{margin:3px 0}
+.new-ap-bill .po-subgrid{max-width:100%;overflow-x:auto;margin-bottom:10px}
+.new-ap-bill #billNotes textarea{display:block;width:100%;max-width:100%;resize:vertical}
+@media(max-width:760px){.new-ap-bill .po-match-summary,.new-ap-bill .compact-bill-details{grid-template-columns:1fr 1fr}}
