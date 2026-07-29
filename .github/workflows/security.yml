@@ -8,13 +8,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: npm }
+        with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run test:security
+      - run: npx playwright install --with-deps chromium
+      - name: Create ephemeral end-to-end administrator
+        shell: bash
+        run: |
+          echo "E2E_ADMIN_EMAIL=e2e-admin@example.invalid" >> "$GITHUB_ENV"
+          echo "E2E_ADMIN_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')" >> "$GITHUB_ENV"
       - run: npm run test:e2e
       - run: npm audit --audit-level=high
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
       - uses: gitleaks/gitleaks-action@v2
   dependency-review:
     if: github.event_name == 'pull_request'
