@@ -3,8 +3,8 @@ import { test, expect } from '@playwright/test';
 async function login(page) {
   await page.goto('/');
   if (await page.locator('#login-screen').isVisible()) {
-    await page.locator('#username').fill('admin');
-    await page.locator('#password').fill('admin');
+    await page.locator('#username').fill(process.env.E2E_ADMIN_EMAIL || '');
+    await page.locator('#password').fill(process.env.E2E_ADMIN_PASSWORD || '');
     await page.locator('#login-form button').click();
   }
 }
