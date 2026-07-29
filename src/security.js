@@ -63,13 +63,15 @@ export class SecurityService {
   async bootstrap() {
     const admins=this.store.users.filter(u=>u.active && (u.roles||[]).includes('Admin'));
     if(admins.length) return;
+    const production=process.env.NODE_ENV==='production';
     const email=String(process.env.BOOTSTRAP_ADMIN_EMAIL||'').trim().toLowerCase(), password=String(process.env.BOOTSTRAP_ADMIN_PASSWORD||'');
-    if(!email&&!password) { if(process.env.NODE_ENV==='production') throw new Error('Production requires an existing administrator or secure bootstrap configuration'); return; }
-    if(!email||!password||password.length<14||/^(admin|password|changeme|123456)/i.test(password)||password.toLowerCase().includes(email.split('@')[0])) throw new Error('Bootstrap administrator credentials do not meet security requirements');
-    if(process.env.NODE_ENV==='production') throw new Error('BOOTSTRAP_ADMIN_PASSWORD is not permitted in production');
+    if(production&&process.env.ALLOW_PRODUCTION_BOOTSTRAP!=='true') throw new Error('Production requires an existing administrator or explicitly enabled secure bootstrap configuration');
+    if(!email&&!password) { if(production) throw new Error('Production bootstrap credentials are required'); return; }
+    const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    if(!email||!password||!validEmail||password.length<14||/^(admin|password|changeme|123456)/i.test(password)||password.toLowerCase().includes(email.split('@')[0])) throw new Error('Bootstrap administrator credentials do not meet security requirements');
     const { hash } = await import('argon2');
     const passwordHash=await hash(password,{type:2,memoryCost:19456,timeCost:2,parallelism:1});
-    this.store.users.push({id:crypto.randomUUID(),email,name:'Bootstrap Administrator',passwordHash,roles:['Admin'],active:true,mustChangePassword:true,companies:['*'],branches:['*'],departments:['*'],createdAt:nowIso()});
+    this.store.users.push({id:crypto.randomUUID(),email,name:'Bootstrap Administrator',passwordHash,roles:['Admin'],active:true,mustChangePassword:false,companies:['*'],branches:['*'],departments:['*'],createdAt:nowIso()});
     await this.store.saveUsers();
   }
   cookie(token,maxAge=Math.floor(this.absoluteMs/1000)) { return `${COOKIE_NAME}=${token}; Max-Age=${maxAge}; Secure; HttpOnly; SameSite=Strict; Path=/`; }
