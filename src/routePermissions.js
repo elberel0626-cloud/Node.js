@@ -1,0 +1,36 @@
+// Deny-by-default permission inventory. Every rule binds explicit methods to a
+// bounded business API namespace; intentionally no generic /api fallback exists.
+export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
+  [['GET'],/^\/api\/ap\/vendors(?:\/.*)?$/,'AP_VENDOR_READ'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/vendors(?:\/.*)?$/,'AP_VENDOR_EDIT'],
+  [['GET'],/^\/api\/ap\/payments(?:\/.*)?$/,'AP_BILL_READ'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/payments(?:\/.*)?$/,'AP_PAYMENT_CREATE'],
+  [['POST'],/^\/api\/ap\/(?:release(?:\/post-selected)?|documents\/post)$/,'AP_BILL_POST'],
+  [['POST'],/^\/api\/ap\/documents\/void$/,'AP_BILL_VOID'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/(?:approval-rules|approval-thresholds)(?:\/.*)?$/,'AP_APPROVAL_RULE_ADMIN'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/(?:approval-|documents\/[^/]+\/(?:approve|reject|delegate|reassign|recall|submit|request-information)).*$/,'AP_BILL_APPROVE'],
+  [['GET'],/^\/api\/ap\/(?:documents|incoming-documents|invoice-|classification-|recurring-|approval-|release|reports\/aging).*$/,'AP_BILL_READ'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/(?:documents|incoming-documents|invoice-|classification-|recurring-).*$/,'AP_BILL_CREATE'],
+  [['GET'],/^\/api\/ar\/(?:customers|credit-terms|documents|open-invoices|open-sales-orders|payment-applications|reports|invoices\/send-history).*$/,'AR_DOCUMENT_READ'],
+  [['POST'],/^\/api\/ar\/(?:documents\/post|release\/post-selected)$/,'AR_DOCUMENT_POST'],
+  [['POST'],/^\/api\/ar\/documents\/void$/,'AR_DOCUMENT_VOID'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/ar\/(?:customers|documents|payments\/apply|memos\/apply|invoices\/send).*$/,'AR_DOCUMENT_CREATE'],
+  [['GET'],/^\/api\/sales-orders(?:\/.*)?$/,'AR_DOCUMENT_READ'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/sales-orders(?:\/.*)?$/,'AR_DOCUMENT_CREATE'],
+  [['GET','POST','PUT','PATCH','DELETE'],/^\/api\/(?:purchase-orders|purchase-receipts|purchasing)(?:\/.*)?$/,'PO_CREATE'],
+  [['GET'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_READ'],
+  [['POST'],/^\/api\/inventory\/documents\/post$/,'INVENTORY_POST'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_ADJUST'],
+  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
+  [['POST'],/^\/api\/finance\/journal-transactions\/post$/,'GL_JOURNAL_POST'],
+  [['POST'],/^\/api\/finance\/journal-transactions\/reverse$/,'GL_JOURNAL_REVERSE'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/finance\/journal-transactions(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
+  [['GET','POST'],/^\/api\/finance\/reclassify\/(?:search|process)$/,'GL_RECLASSIFY'],
+  [['POST'],/^\/api\/finance\/financial-periods\/(?:action|blockers)$/,'FINANCIAL_PERIOD_CLOSE'],
+  [['GET'],/^\/api\/tax\/(?:rates|zones|categories|jurisdictions|exemptions|history|remittances|providers)(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
+  [['POST','PUT','PATCH','DELETE'],/^\/api\/tax\/(?:rates|zones|categories|remittances|calculate|import-rates)(?:\/.*)?$/,'SYSTEM_CONFIGURATION_ADMIN'],
+  [['GET'],/^\/api\/finance\/email-settings(?:\/test)?$/,'GL_JOURNAL_CREATE'],
+  [['POST','PUT'],/^\/api\/finance\/email-settings(?:\/test)?$/,'SYSTEM_CONFIGURATION_ADMIN'],
+  [['GET','POST','PUT','PATCH','DELETE'],/^\/api\/notifications(?:\/.*)?$/,'AP_BILL_READ']
+]);
+export function routePermission(method,pathname){return BUSINESS_ROUTE_PERMISSIONS.find(([methods,path])=>methods.includes(method)&&path.test(pathname))?.[2]||null;}

@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+data/security/
+data/ap-incoming-documents/
+data/ap-bill-attachments/
+*.log
+*.sqlite*
+*.db
+*.dump
+security-reports/
+test-results/
+playwright-report/
+

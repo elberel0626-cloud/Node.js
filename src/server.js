@@ -12,8 +12,12 @@ import { InvoiceRecognitionService } from './invoiceRecognitionService.js';
 import { createDocumentAIProvider } from './documentAIProvider.js';
 import { calculateApBillTotals, evaluateApInvoice, AP_INVOICE_CLASSIFICATIONS, DEFAULT_AP_DECISION_RULES, learnedClassificationSuggestion } from './apInvoiceEvaluation.js';
 import { calculateTax, copyTaxZoneVersion, customerExemptions, importTaxRates, inactivateTaxZoneVersion, internalTaxProvider, listTaxZoneVersions, saveTaxCategory, saveTaxZoneVersion, taxCategories, taxHistory, taxJurisdictions, taxPaidByCustomer, taxRates, taxZones } from './taxEngine.js';
+import { FileSecurityStore, SecurityError, SecurityService, securityHeaders } from './security.js';
+import { routePermission } from './routePermissions.js';
 
 const publicDir = path.resolve('public');
+const security = new SecurityService({store:new FileSecurityStore()});
+await security.init();
 const incomingStorageDir = path.resolve('data/ap-incoming-documents');
 const apAttachmentStorageDir = path.resolve('data/ap-bill-attachments');
 const apAttachmentIndexPath = path.join(apAttachmentStorageDir, 'index.json');
@@ -104,8 +108,8 @@ const invoiceEmailHistory = [];
 const runtimeEmailSettings = {};
 const approvalEmailOutbox = [];
 const workflowUsers = [
-  { id: 'admin', name: 'System Administrator', email: 'admin@local', status: 'Active', roles: ['Admin', 'AP Manager', 'Controller', 'CFO'] },
-  { id: 'ebu.damiranbazar', name: 'Ebu Damiranbazar', email: 'Ebud@MRprint.com', status: 'Active', roles: ['Procurement Approver'] },
+  { id: 'administrator', name: 'System Administrator', email: 'administrator@example.invalid', status: 'Inactive', roles: ['Admin'] },
+  { id: 'procurement.approver', name: 'Procurement Approver', email: 'procurement.approver@example.invalid', status: 'Active', roles: ['Procurement Approver'] },
   { id: 'ap.manager', name: 'AP Manager', roles: ['AP Manager'] },
   { id: 'controller', name: 'Controller', roles: ['Controller'] },
   { id: 'cfo', name: 'CFO', roles: ['CFO'] },
@@ -266,12 +270,11 @@ const documentRecognitionEngine = new DocumentRecognitionEngine({
   learnCorrection: (correction)=>RecognitionCorrections.push({...correction,date:new Date().toISOString()})
 });
 function incomingDashboard(){ const total=apIncomingVendorBills.length; const exceptions=apIncomingVendorBills.filter(r=>r.exceptions.length).length; const touchless=total?Math.round((apIncomingVendorBills.filter(r=>!r.exceptions.length).length/total)*100):0; return {invoicesProcessed:total,touchlessProcessingPct:touchless,averageProcessingTime:'8.4s',exceptionRate:total?Math.round((exceptions/total)*100):0,duplicateInvoicesPrevented:apIncomingVendorBills.flatMap(r=>r.exceptions).filter(e=>e.type==='Duplicate Invoice').length,approvalBottlenecks:apDocuments.filter(d=>d.status==='Pending Approval').length,openExceptions:exceptions,monthlyApSpend:apDocuments.filter(d=>d.type==='Bill'&&d.posted).reduce((s,d)=>s+Number(d.amount||0),0)}; }
-const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json'});res.end(JSON.stringify(d));};
-const sessionUserId=req=>decodeURIComponent((String(req.headers.cookie||'').match(/(?:^|;\s*)erp_session=([^;]+)/)||[])[1]||'');
-const authenticatedUser=req=>workflowUsers.find(u=>u.id===sessionUserId(req)&&u.status!=='Inactive');
-const isAuthenticated=req=>!!authenticatedUser(req);
-const requireAuthenticated=(req)=>{ if(!isAuthenticated(req)) throw new Error('Authentication required'); };
-const body=(req)=>new Promise((resolve,reject)=>{let r='';req.on('data',c=>r+=c);req.on('end',()=>{try{resolve(r?JSON.parse(r):{});}catch{reject(new Error('Invalid JSON'));}});req.on('error',reject);});
+const json=(res,c,d)=>{res.writeHead(c,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(d));};
+const authenticatedUser=req=>req.auth?.user||null;
+const isAuthenticated=req=>!!req.auth;
+const requireAuthenticated=(req)=>{ if(!req.auth) throw new SecurityError(401,'Authentication required','UNAUTHENTICATED'); };
+const body=(req)=>new Promise((resolve,reject)=>{const type=String(req.headers['content-type']||'').split(';')[0];if(type!=='application/json')return reject(new SecurityError(415,'Content-Type must be application/json','CONTENT_TYPE'));let r='',size=0,done=false;req.on('data',c=>{if(done)return;size+=c.length;if(size>1024*1024){done=true;reject(new SecurityError(413,'Request body exceeds the 1 MB limit','PAYLOAD_TOO_LARGE'));req.resume();return;}r+=c;});req.on('end',()=>{if(done)return;try{const parsed=r?JSON.parse(r):{};const unsafe=(value)=>value&&typeof value==='object'&&(Object.keys(value).some(k=>['__proto__','prototype','constructor'].includes(k))||Object.values(value).some(unsafe));if(unsafe(parsed))return reject(new SecurityError(400,'Request contains prohibited properties','INVALID_INPUT'));resolve(parsed);}catch{reject(new SecurityError(400,'Invalid JSON','INVALID_JSON'));}});req.on('error',reject);});
 const POSTING_ACCOUNTS={arCash:'1079',apCash:'1084',accountsReceivable:'1210',accountsPayable:'2020',apTrade:'2010',poRni:'2020',vendorDeposit:'1960',customerDeposits:'2050',returnsAllowances:'4070',bankFees:'6060',defaultSalesRevenue:'4008'};
 const PLACEHOLDER_ACCOUNTS=new Set(['Cash','AR','AP','Revenue','Expense','1000','1100','4000','4050','5000']);
 const acct=(code)=>glAccounts.find(a=>a.code===String(code));
@@ -962,10 +965,17 @@ function prepareSoInvoice(orderId,payload={}){ const order=salesOrders.find(o=>o
 
 async function serve(p,res){ if(p==='/app.js'||p==='/styles.css'){const c=await readFile(path.join(publicDir,p.slice(1)));res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css':'application/javascript'});res.end(c);return true;} if(!p.startsWith('/api')){const c=await readFile(path.join(publicDir,'index.html'));res.writeHead(200,{'Content-Type':'text/html'});res.end(c);return true;} return false; }
 
-const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; try{
+const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; req.requestId=crypto.randomUUID();res.setHeader('X-Request-ID',req.requestId);securityHeaders(req,res);try{
+ if(process.env.NODE_ENV==='production'&&req.socket.remoteAddress!=='127.0.0.1'&&req.socket.remoteAddress!=='::1'&&!req.socket.encrypted) throw new SecurityError(400,'HTTPS is required','HTTPS_REQUIRED');
  if(method==='GET'&&await serve(pathname,res)) return;
- if(method==='GET'&&pathname==='/api/auth/session'){const user=authenticatedUser(req);return user?json(res,200,{authenticated:true,user:{id:user.id,name:user.name,email:user.email||'',roles:user.roles||[]}}):json(res,401,{error:'Authentication required'});}
- if(method==='POST'&&pathname==='/api/auth/login'){const b=await body(req);const user=workflowUsers.find(u=>u.status!=='Inactive'&&(u.id===b.username||String(u.email||'').toLowerCase()===String(b.username||'').toLowerCase()));if(user&&b.password==='admin'){res.setHeader('Set-Cookie',`erp_session=${encodeURIComponent(user.id)}; HttpOnly; SameSite=Lax; Path=/`);return json(res,200,{ok:true,user:{id:user.id,name:user.name}});}return json(res,401,{error:'Invalid'});}
+ if(method==='GET'&&pathname==='/api/health') return json(res,200,{status:'ok'});
+ if(method==='POST'&&pathname==='/api/auth/login'){if(String(req.headers.origin||'')!==security.appOrigin)throw new SecurityError(403,'Invalid request origin','CSRF');const b=await body(req);if(Object.keys(b).some(k=>!['email','username','password'].includes(k))||typeof b.password!=='string'||typeof (b.email??b.username)!=='string')throw new SecurityError(400,'Invalid login request','INVALID_INPUT');const login=String(b.email||b.username).trim().toLowerCase(),key=`${login}|${req.socket.remoteAddress||''}`;security.limitLogin(key);const user=security.store.users.find(u=>u.active&&u.email===login);let valid=false;if(user){const {verify}=await import('argon2');valid=await verify(user.passwordHash,b.password).catch(()=>false);}if(!valid){security.failedLogin(key);await security.audit(req,'LOGIN_FAILURE','denied',{reason:'Invalid credentials',metadata:{loginHash:crypto.createHash('sha256').update(login).digest('hex')}});return json(res,401,{error:'Invalid credentials',requestId:req.requestId});}security.successfulLogin(key);const {token,record}=await security.createSession(user,req);req.auth={user,session:record};res.setHeader('Set-Cookie',security.cookie(token));await security.audit(req,'LOGIN_SUCCESS','success');return json(res,200,{ok:true,user:{id:user.id,name:user.name,email:user.email,roles:user.roles,mustChangePassword:user.mustChangePassword}});}
+ if(pathname.startsWith('/api/')){req.auth=await security.authenticate(req);if(!req.auth)throw new SecurityError(401,'Authentication required','UNAUTHENTICATED');if(['POST','PUT','PATCH','DELETE'].includes(method))security.verifyCsrf(req);}
+ if(method==='GET'&&pathname==='/api/auth/session'){const user=authenticatedUser(req);return json(res,200,{authenticated:true,user:{id:user.id,name:user.name,email:user.email||'',roles:user.roles||[],mustChangePassword:!!user.mustChangePassword}});}
+ if(method==='GET'&&pathname==='/api/auth/csrf')return json(res,200,{csrfToken:await security.csrf(req)});
+ if(method==='POST'&&pathname==='/api/auth/logout'){await security.revoke(req.auth.session);await security.audit(req,'LOGOUT','success');res.setHeader('Set-Cookie',security.clearCookie());res.setHeader('Clear-Site-Data','"cache", "cookies", "storage"');return json(res,200,{ok:true});}
+ if(method==='POST'&&pathname==='/api/auth/logout-all'){await security.revoke(req.auth.session,true);await security.audit(req,'SESSION_REVOCATION','success',{reason:'User requested logout all'});res.setHeader('Set-Cookie',security.clearCookie());res.setHeader('Clear-Site-Data','"cache", "cookies", "storage"');return json(res,200,{ok:true});}
+ const permission=routePermission(method,pathname);if(pathname.startsWith('/api/')&&!pathname.startsWith('/api/auth/')&&!permission)throw new SecurityError(403,'Route permission is not configured','FORBIDDEN');if(permission)security.requirePermission(req,permission);
  if(method==='GET'&&pathname==='/api/ar/customers') return json(res,200,customers.map(enrichCustomer));
 
  if(method==='GET'&&pathname==='/api/tax/rates') return json(res,200,listTaxZoneVersions());
@@ -1304,7 +1314,7 @@ if(method==='POST'&&pathname==='/api/ar/documents/post'){
 
  if(method==='GET'&&pathname==='/api/gl/journal-entries') return json(res,200,journalEntries);
  return json(res,404,{error:'Not found'});
- }catch(e){return json(res,400,{error:e.message});}});
+ }catch(e){const status=e instanceof SecurityError?e.statusCode:Number(e.statusCode)||500;if(status===403&&req.auth)await security.audit(req,e.code==='CSRF'?'CSRF_FAILURE':'PERMISSION_FAILURE','denied',{reason:e.message});console.error(JSON.stringify({requestId:req.requestId,error:e.message,code:e.code||'INTERNAL_ERROR'}));return json(res,status,{error:status>=500?'Internal server error':e.message,requestId:req.requestId});}});
 console.log("[Document AI Config]", {
   provider: process.env.DOCUMENT_AI_PROVIDER || null,
   traceEnabled: process.env.AP_TRACE_INVOICE_RECOGNITION === "1",
@@ -1317,4 +1327,5 @@ console.log("[Document AI Config]", {
   azureModel:
     process.env.AZURE_DOCUMENT_INTELLIGENCE_MODEL || null,
 });
+if(process.env.NODE_ENV==='production'&&(!process.env.APP_ORIGIN||!process.env.DATABASE_URL||!process.env.OBJECT_STORAGE_PROVIDER)) throw new Error('Production security configuration is incomplete');
 server.listen(process.env.PORT||3000);
