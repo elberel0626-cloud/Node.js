@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { appendFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export const COOKIE_NAME = '__Host-erp_session';
@@ -37,9 +37,21 @@ export const ROLE_PERMISSIONS = Object.freeze({
 export class SecurityError extends Error { constructor(statusCode, message, code='SECURITY_ERROR') { super(message); this.statusCode=statusCode; this.code=code; } }
 
 export class FileSecurityStore {
-  constructor(root = path.resolve('data/security')) { this.root=root; this.sessionPath=path.join(root,'sessions.json'); this.userPath=path.join(root,'users.json'); this.auditPath=path.join(root,'audit.jsonl'); this.sessions=[]; this.users=[]; }
+  constructor(root = path.resolve('data/security')) { this.root=root; this.sessionPath=path.join(root,'sessions.json'); this.userPath=path.join(root,'users.json'); this.auditPath=path.join(root,'audit.jsonl'); this.sessions=[]; this.users=[]; this.writeQueues=new Map(); }
   async init() { await mkdir(this.root,{recursive:true}); this.sessions=await readFile(this.sessionPath,'utf8').then(JSON.parse).catch(()=>[]); this.users=await readFile(this.userPath,'utf8').then(JSON.parse).catch(()=>[]); }
-  async atomicWrite(file, value) { const temporary=`${file}.${process.pid}.tmp`; await writeFile(temporary,JSON.stringify(value,null,2),{mode:0o600}); await rename(temporary,file); }
+  atomicWrite(file, value) {
+    // Capture before yielding: a later mutation must never leak into, or be
+    // overwritten by, this queued write.
+    const snapshot=JSON.stringify(value,null,2);
+    const previous=this.writeQueues.get(file)||Promise.resolve();
+    const write=previous.catch(()=>{}).then(async()=>{
+      const temporary=`${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+      try { await writeFile(temporary,snapshot,{mode:0o600}); await rename(temporary,file); }
+      catch(error) { await rm(temporary,{force:true}).catch(()=>{}); throw error; }
+    });
+    this.writeQueues.set(file,write);
+    return write.finally(()=>{ if(this.writeQueues.get(file)===write)this.writeQueues.delete(file); });
+  }
   async saveSessions() { await this.atomicWrite(this.sessionPath,this.sessions); }
   async saveUsers() { await this.atomicWrite(this.userPath,this.users); }
   async audit(event) { await appendFile(this.auditPath,`${JSON.stringify(event)}\n`,{mode:0o600}); }

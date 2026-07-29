@@ -1,19 +1,11 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, openView } from './fixtures/authenticated.js';
 
-async function login(page) {
-  await page.goto('/');
-  if (await page.locator('#login-screen').isVisible()) {
-    await page.locator('#username').fill(process.env.E2E_ADMIN_EMAIL || '');
-    await page.locator('#password').fill(process.env.E2E_ADMIN_PASSWORD || '');
-    await page.locator('#login-form button').click();
-  }
-}
+test.describe.configure({mode:'serial'});
 
 const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF\n');
 
 test('AP Bill PDF uploads, persists, downloads, and opens from Inquiry', async ({ page }) => {
-  await login(page);
-  await page.goto('/ap/bills');
+  await openView(page,'/ap/bills','#apBillGrid');
   const billHref = await page.locator('#apBillGrid a[href^="/ap/bills/"]').first().getAttribute('href');
   await page.goto(billHref);
   await page.locator(".erp-tabs .tab[data-tab='billNotes']").click();
@@ -32,8 +24,7 @@ test('AP Bill PDF uploads, persists, downloads, and opens from Inquiry', async (
 });
 
 test('AP Bill rejects a renamed non-PDF', async ({ page }) => {
-  await login(page);
-  await page.goto('/ap/bills');
+  await openView(page,'/ap/bills','#apBillGrid');
   const billHref = await page.locator('#apBillGrid a[href^="/ap/bills/"]').first().getAttribute('href');
   await page.goto(billHref);
   await page.locator(".erp-tabs .tab[data-tab='billNotes']").click();
