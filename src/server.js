@@ -344,6 +344,15 @@ function trialBalanceReport(filters={}){
  const rows=glAccounts.map(account=>{const all=postedAccountLines(account.code),baseline=Number(account.balance||0)-all.reduce((sum,line)=>sum+line.debit-line.credit,0),periodLines=all.filter(line=>(!from||line.postPeriod>=from)&&(!to||line.postPeriod<=to)),throughEnd=all.filter(line=>!to||line.postPeriod<=to);return{accountType:account.accountType||'Asset/Liability',accountNumber:account.code,accountTitle:account.name,debit:periodLines.reduce((sum,line)=>sum+line.debit,0),credit:periodLines.reduce((sum,line)=>sum+line.credit,0),balance:baseline+throughEnd.reduce((sum,line)=>sum+line.debit-line.credit,0),hasActivity:periodLines.length>0};});
  return{fromPeriod:from,toPeriod:to,rows,totals:{totalDebits:rows.reduce((sum,row)=>sum+row.debit,0),totalCredits:rows.reduce((sum,row)=>sum+row.credit,0),netDifference:rows.reduce((sum,row)=>sum+row.debit-row.credit,0)}};
 }
+function annualChartOfAccounts(yearValue){
+ const currentYear=String(new Date().getUTCFullYear());
+ const years=new Set([currentYear,...financialPeriods.map(period=>String(period.financialYear||period.periodId||'').slice(0,4)),...journalEntries.filter(j=>j.status==='Posted').map(j=>String(j.postPeriod||j.financialPeriod||j.transactionDate||'').slice(0,4))]);
+ const availableYears=[...years].filter(year=>/^\d{4}$/.test(year)).sort((a,b)=>b.localeCompare(a));
+ const requested=String(yearValue||''); const selectedYear=availableYears.includes(requested)?requested:(availableYears.includes(currentYear)?currentYear:availableYears[0]);
+ const fromPeriod=`${selectedYear}-01`,toPeriod=`${selectedYear}-12`;
+ const rows=glAccounts.map(account=>{const all=postedAccountLines(account.code),baseline=Number(account.balance||0)-all.reduce((sum,line)=>sum+line.debit-line.credit,0),before=all.filter(line=>line.postPeriod<fromPeriod),during=all.filter(line=>line.postPeriod>=fromPeriod&&line.postPeriod<=toPeriod),beginningBalance=baseline+before.reduce((sum,line)=>sum+line.debit-line.credit,0),debitActivity=during.reduce((sum,line)=>sum+line.debit,0),creditActivity=during.reduce((sum,line)=>sum+line.credit,0);return{accountNumber:account.code,accountTitle:account.name,accountType:account.accountType||'Asset/Liability',normalBalance:account.normal,active:account.active!==false,beginningBalance,debitActivity,creditActivity,endingBalance:beginningBalance+debitActivity-creditActivity,hasActivity:during.length>0};});
+ return{selectedYear,availableYears,rows};
+}
 function financeSourceHref(module,documentType,reference){
  if(!reference)return''; const ref=String(reference),mod=String(module||'').toUpperCase(),type=String(documentType||'').toLowerCase();
  if(mod==='AP'){const doc=apDocuments.find(d=>String(d.id)===ref);return (type.includes('payment')||doc?.type==='Payment')?`/ap/payments/${encodeURIComponent(ref)}`:`/ap/bills/${encodeURIComponent(ref)}`;}
@@ -1119,6 +1128,7 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='GET'&&pathname==='/api/finance/branches') return json(res,200,branchMaster);
  if(method==='GET'&&pathname==='/api/gl/accounts') return json(res,200,glAccounts);
  if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ return json(res,200,glAccounts.map(a=>({accountType:a.accountType||'Asset/Liability',accountNumber:a.code,accountTitle:a.name,normalBalance:a.normal,active:a.active!==false,currentBalance:Number(a.balance||0),debits:Number(a.debits??(Number(a.balance||0)>0?Number(a.balance):0)),credits:Number(a.credits??(Number(a.balance||0)<0?Math.abs(Number(a.balance)):0)),balance:Number(a.balance||0)}))); }
+ if(method==='GET'&&pathname==='/api/finance/chart-of-accounts/annual') return json(res,200,annualChartOfAccounts(query.year));
 
  if(method==='GET'&&pathname==='/api/purchase-orders/vendors'){ const q=String(query.q||'').toLowerCase(); const rows=vendors.filter(v=>!q||v.id.toLowerCase().includes(q)||v.name.toLowerCase().includes(q)).map(v=>({id:v.id,name:v.name,terms:v.terms||'NET30',vendorLocation:v.defaultLocation||'MAIN',remitInfo:v.address||'',currency:v.currency||'USD',defaultWarehouse:v.defaultWarehouse||'MAIN',apAccount:v.apAccount||POSTING_ACCOUNTS.apTrade,display:`${v.id}    ${v.name}`})); return json(res,200,rows); }
  if(method==='GET'&&pathname==='/api/purchase-orders/setup'){ return json(res,200,{settings:poSettings,types:purchaseOrderTypes,buyers,landedCostCodes,vendorItems}); }
@@ -1153,12 +1163,13 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
   let accountNumber=''; try{accountNumber=decodeURIComponent(pathname.slice('/api/finance/account-details/'.length));}catch{return json(res,400,{error:'Invalid account number'});}
   const account=glAccounts.find(a=>String(a.code)===accountNumber); if(!account)return json(res,404,{error:'Account not found'});
   const report=trialBalanceReport(query), reportRow=report.rows.find(r=>r.accountNumber===accountNumber);
-  const from=String(query.fromPeriod||''),to=String(query.toPeriod||'');
-  const all=postedAccountLines(accountNumber), activity=all.filter(l=>(!from||l.postPeriod>=from)&&(!to||l.postPeriod<=to));
+  const from=String(query.fromPeriod||''),to=String(query.toPeriod||''),activityMode=['debit','credit'].includes(String(query.activity))?String(query.activity):'all';
+  const all=postedAccountLines(accountNumber), periodLines=all.filter(l=>(!from||l.postPeriod>=from)&&(!to||l.postPeriod<=to));
   const baseline=Number(account.balance||0)-all.reduce((sum,l)=>sum+l.debit-l.credit,0);
   const beginningBalance=baseline+all.filter(l=>from&&l.postPeriod<from).reduce((sum,l)=>sum+l.debit-l.credit,0);
-  let running=beginningBalance;
-  return json(res,200,{accountNumber,accountTitle:account.name,fromPeriod:from,toPeriod:to,beginningBalance,endingBalance:reportRow?.balance??beginningBalance,activity:activity.map(line=>({...line,accountNumber,runningBalance:(running+=line.debit-line.credit),sourceHref:financeSourceHref(line.sourceModule,line.sourceDocumentType,line.sourceReference)}))});
+  let running=beginningBalance; const calculated=periodLines.map(line=>({...line,accountNumber,runningBalance:(running+=line.debit-line.credit),sourceHref:financeSourceHref(line.sourceModule,line.sourceDocumentType,line.sourceReference)}));
+  const activityRows=calculated.filter(line=>activityMode==='all'||(activityMode==='debit'?line.debit>0:line.credit>0));
+  return json(res,200,{accountNumber,accountTitle:account.name,fromPeriod:from,toPeriod:to,activity:activityMode,beginningBalance,totalDebits:periodLines.reduce((sum,line)=>sum+line.debit,0),totalCredits:periodLines.reduce((sum,line)=>sum+line.credit,0),endingBalance:reportRow?.balance??beginningBalance,activityRows});
  }
 
 

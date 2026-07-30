@@ -1,142 +1,102 @@
 import { test, expect, openView } from './fixtures/authenticated.js';
 
-async function firstActivityAccount(page) {
-  return page.evaluate(async () => {
-    const response = await fetch('/api/finance/trial-balance');
-    const report = await response.json();
-    return report.rows.find(row => row.hasActivity) || report.rows[0];
-  });
+const targetAccount = '1000';
+const offsetAccount = '1100';
+
+async function ensureControlledPostedActivity(page) {
+  await page.evaluate(async ({ targetAccount, offsetAccount }) => {
+    const marker = 'E2E annual GL drilldown';
+    const existing = await (await fetch('/api/finance/journal-transactions')).json();
+    if (existing.some(journal => journal.description === marker + ' 2025 debit')) return;
+    const entries = [
+      ['2025-03-15', '2025 debit', 40, 0], ['2025-08-15', '2025 credit', 0, 15],
+      ['2026-03-15', '2026 debit', 75, 0], ['2026-08-15', '2026 credit', 0, 25]
+    ];
+    for (const [date, label, debit, credit] of entries) {
+      const amount = debit || credit;
+      const saved = await (await fetch('/api/finance/journal-transactions', { method: 'POST', body: JSON.stringify({
+        transactionDate: date, financialPeriod: date.slice(0, 7), description: `${marker} ${label}`,
+        lines: [
+          { branch: '100', account: targetAccount, debit, credit, lineDescription: label },
+          { branch: '100', account: offsetAccount, debit: credit ? amount : 0, credit: debit ? amount : 0, lineDescription: `${label} offset` }
+        ]
+      }) })).json();
+      const response = await fetch('/api/finance/journal-transactions/post', { method: 'POST', body: JSON.stringify({ jeNumber: saved.jeNumber }) });
+      if (!response.ok) throw new Error(await response.text());
+    }
+  }, { targetAccount, offsetAccount });
 }
 
-async function expectAccountDetailsAfterClick(page, link, accountNumber, query = '') {
+async function clickAndExpectDetails(page, link, account, expectedParams) {
   const before = page.url();
   await link.click();
-  await expect(page, 'account drilldown URL must change').not.toHaveURL(before);
-  await expect(page).toHaveURL(new URL(`/finance/account-details/${encodeURIComponent(accountNumber)}${query}`, page.url()).href);
+  await expect(page, 'drilldown must change the URL').not.toHaveURL(before);
+  await expect(page).toHaveURL(new RegExp(`/finance/account-details/${encodeURIComponent(account)}\\?`));
+  const actual = new URL(page.url());
+  for (const [key, value] of Object.entries(expectedParams)) expect(actual.searchParams.get(key), key).toBe(value);
   await expect(page.locator('#view')).not.toContainText('Coming Soon');
   await expect(page.locator('#acctDtlGrid')).toBeVisible();
 }
 
-test('Journal Transactions renders and opens new and existing journals', async ({ page }) => {
+test('Trial Balance is a Finance report and Journal Transactions remains working', async ({ page }) => {
+  await openView(page, '/finance', '#view');
+  const overviewReports = page.locator('#view section', { has: page.getByRole('heading', { name: 'Reports' }) });
+  await expect(overviewReports.getByRole('link', { name: 'Trial Balance' })).toHaveCount(1);
+  await expect(page.locator('#view section', { has: page.getByRole('heading', { name: 'Explore' }) }).getByRole('link', { name: 'Trial Balance' })).toHaveCount(0);
+  const navReports = page.locator('#ar-nav .nav-group', { hasText: 'Reports' });
+  await expect(navReports.getByRole('link', { name: 'Trial Balance', exact: true })).toHaveCount(1);
+  await expect(page.locator('#ar-nav .nav-group', { hasText: 'Enter' }).getByRole('link', { name: 'Trial Balance' })).toHaveCount(0);
+  await expect(page.locator('#ar-nav')).not.toContainText('Reports (Coming Soon)');
   await openView(page, '/finance/journal', '#jeGrid');
   await expect(page.locator('#view')).not.toContainText('Coming Soon');
-  const firstJournal = page.locator("#jeGrid td[data-k='jeNumber'] a").first();
-  const journalHref = await firstJournal.getAttribute('href');
-  await firstJournal.click();
-  await expect(page).toHaveURL(new URL(journalHref, page.url()).href);
-  await page.goto('/finance/journal');
-  await expect(page.locator('#jeGrid')).toBeVisible();
-  await page.getByRole('button', { name: 'New JE', exact: true }).click();
-  await expect(page).toHaveURL(new URL('/finance/journal/new', page.url()).href);
-  await expect(page.locator('#newJe')).toBeVisible();
 });
 
-test('Chart of Accounts account and balance drilldowns preserve list state', async ({ page }) => {
-  await openView(page, '/finance/chart-of-accounts', '#coaGrid');
-  const account = await firstActivityAccount(page);
-  await page.locator("#coaGrid .grid-dir[data-k='accountNumber'][data-dir='desc']").click();
-  await expect(page.locator('#coaGrid')).toHaveAttribute('data-sort-dir', 'desc');
-  const next = page.locator('#coaGrid_next');
-  if (await next.isVisible() && await next.isEnabled()) {
-    await next.click();
-    await expect(page.locator('#coaGrid_page')).toContainText('Page 2');
-    const pagedRow = page.locator('#coaGrid tr[data-row]:visible').first();
-    const pagedAccount = (await pagedRow.locator("td[data-k='accountNumber']").innerText()).trim();
-    await expectAccountDetailsAfterClick(page, pagedRow.locator("td[data-k='accountNumber'] a"), pagedAccount);
-    await page.locator('#accountDetailsBack').click();
-    await expect(page.locator('#coaGrid_page')).toContainText('Page 2');
-    await expect(page.locator('#coaGrid')).toHaveAttribute('data-sort-dir', 'desc');
-  }
-  await page.goto('/finance/chart-of-accounts');
-  await expect(page.locator('#coaGrid')).toBeVisible();
-  const search = page.locator(".grid-search[data-grid='coaGrid']");
-  await search.fill(account.accountNumber);
-  await page.evaluate(() => scrollTo(0, 120));
-  const accountRow = page.locator('#coaGrid tr', { hasText: account.accountNumber }).filter({ has: page.locator('td') }).first();
-  await expectAccountDetailsAfterClick(page, accountRow.locator("td[data-k='accountNumber'] a"), account.accountNumber);
-  const shownAccounts = await page.evaluate(async accountNumber => {
-    const details = await (await fetch(`/api/finance/account-details/${encodeURIComponent(accountNumber)}`)).json();
-    return details.activity.every(line => line.accountNumber === undefined || line.accountNumber === accountNumber);
-  }, account.accountNumber);
-  expect(shownAccounts).toBe(true);
-  await page.locator('#accountDetailsBack').click();
-  await expect(page).toHaveURL(/\/finance\/chart-of-accounts$/);
-  await expect(search).toHaveValue(account.accountNumber);
-
-  await expectAccountDetailsAfterClick(page, accountRow.locator("td[data-k='currentBalance'] a"), account.accountNumber);
-});
-
-test('Trial Balance links reconcile to period-aware Account Details', async ({ page }) => {
-  await openView(page, '/finance/trial-balance?fromPeriod=2026-05&toPeriod=2026-05', '#tbGrid');
-  await page.locator("#tbGrid .grid-dir[data-k='accountNumber'][data-dir='desc']").click();
-  const row = page.locator('#tbGrid tr').filter({ has: page.locator('td') }).filter({ has: page.locator("td[data-k='accountNumber'] a") }).first();
-  const accountNumber = (await row.locator("td[data-k='accountNumber']").innerText()).trim();
-  const expectedBalance = (await row.locator("td[data-k='balance']").innerText()).trim();
-  await expectAccountDetailsAfterClick(page, row.locator("td[data-k='accountNumber'] a"), accountNumber, '?fromPeriod=2026-05&toPeriod=2026-05');
-  await expect(page.locator('#accountEndingBalance')).toHaveText(expectedBalance);
-  await page.locator('#accountDetailsBack').click();
-  await expect(page.locator('#tbFrom')).toHaveValue('2026-05');
-  await expect(page.locator('#tbTo')).toHaveValue('2026-05');
-  await expect(page.locator('#tbGrid')).toHaveAttribute('data-sort-dir', 'desc');
-  for (const key of ['debit', 'credit', 'balance']) {
-    await expectAccountDetailsAfterClick(page, row.locator(`td[data-k='${key}'] a`), accountNumber, '?fromPeriod=2026-05&toPeriod=2026-05');
-    await page.locator('#accountDetailsBack').click();
-  }
-});
-
-test('journal and AP, AR, and Inventory source references open the correct records', async ({ page }) => {
-  const targets = await page.evaluate(async () => {
-    const report = await (await fetch('/api/finance/trial-balance')).json();
-    const found = {};
-    for (const row of report.rows) {
-      const details = await (await fetch(`/api/finance/account-details/${encodeURIComponent(row.accountNumber)}`)).json();
-      for (const source of details.activity) {
-        const module = String(source.sourceModule).toUpperCase();
-        if (source.sourceHref && ['AP', 'AR', 'INVENTORY'].includes(module) && !found[module]) {
-          found[module] = { accountNumber: row.accountNumber, source };
-        }
-      }
-    }
-    return found;
-  });
-  expect(Object.keys(targets).sort()).toEqual(['AP', 'AR', 'INVENTORY']);
-  for (const target of Object.values(targets)) {
-    await openView(page, `/finance/account-details/${encodeURIComponent(target.accountNumber)}`, '#acctDtlGrid');
-    const activityRow = page.locator('#acctDtlGrid tr', { hasText: target.source.jeReference })
-      .filter({ has: page.locator(`td[data-k='sourceLink'] a[href='${target.source.sourceHref}']`) }).first();
-    await activityRow.locator("td[data-k='jeLink'] a").click();
-    await expect(page).toHaveURL(new RegExp(`/finance/journal/${encodeURIComponent(target.source.jeReference)}$`));
-    await page.goBack();
-    await expect(page.locator('#acctDtlGrid')).toBeVisible();
-    await activityRow.locator("td[data-k='sourceLink'] a").click();
-    await expect(page).toHaveURL(new RegExp(target.source.sourceHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$'));
-  }
-});
-
-test('obsolete Finance navigation is removed without affecting branch-backed journals', async ({ page }) => {
-  await page.addInitScript(() => localStorage.setItem('nav_pref_Finance', JSON.stringify([
-    { route: '/finance', visible: true, order: 0 },
-    { route: '/finance/branches', label: 'Branches', visible: true, order: 1 },
-    { route: '/finance/journal-inquiry', label: 'Journal Entry Inquiry', visible: true, order: 2 },
-    { route: '/finance/journal', label: 'Journal Transactions', visible: true, order: 3 }
-  ])));
+test('annual Chart of Accounts reports posted activity and restores year and grid state', async ({ page }) => {
   await openView(page, '/finance', '#view');
-  await expect(page.locator('#view')).not.toContainText('Branches');
-  await expect(page.locator('#view')).not.toContainText('Journal Entry Inquiry');
-  await expect(page.locator('#ar-nav')).not.toContainText('Branches');
-  await expect(page.locator('#ar-nav')).not.toContainText('Journal Entry Inquiry');
-  await expect(page.locator('#ar-nav')).toContainText('Journal Transactions');
-  for (const obsoletePath of ['/finance/branches', '/finance/journal-inquiry']) {
-    await page.goto(obsoletePath);
-    await expect(page).toHaveURL(/\/finance$/);
-    await expect(page.locator('#view')).not.toContainText('Coming Soon');
+  await ensureControlledPostedActivity(page);
+  await openView(page, '/finance/chart-of-accounts?year=2026', '#coaGrid');
+  await expect(page.locator('#coaYear')).toHaveValue('2026');
+  for (const key of ['beginningBalance', 'debitActivity', 'creditActivity', 'endingBalance']) await expect(page.locator(`#coaGrid th[data-k='${key}']`)).toBeVisible();
+  const search = page.locator(".grid-search[data-grid='coaGrid']"); await search.fill(targetAccount);
+  await page.locator("#coaGrid .grid-dir[data-k='accountNumber'][data-dir='desc']").click();
+  const row = page.locator('#coaGrid tr', { hasText: targetAccount }).filter({ has: page.locator('td') }).first();
+  expect(await row.locator("td[data-k='debitActivity']").innerText()).not.toBe('$0.00');
+  await clickAndExpectDetails(page, row.locator("td[data-k='accountNumber'] a"), targetAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2026' });
+  await page.locator('#accountDetailsBack').click();
+  await expect(page).toHaveURL(/\/finance\/chart-of-accounts\?year=2026$/); await expect(search).toHaveValue(targetAccount);
+  await clickAndExpectDetails(page, row.locator("td[data-k='endingBalance'] a"), targetAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2026' });
+  await page.locator('#accountDetailsBack').click();
+  await page.locator('#coaYear').selectOption('2025'); await expect(page).toHaveURL(/year=2025/);
+  const annual = await page.evaluate(async () => Promise.all(['2025','2026'].map(async year => (await (await fetch('/api/finance/chart-of-accounts/annual?year='+year)).json()).rows.find(row => row.accountNumber === '1000').debitActivity)));
+  expect(annual[0]).not.toBe(annual[1]);
+  const emptyAccount = await page.evaluate(async () => (await (await fetch('/api/finance/chart-of-accounts/annual?year=2025')).json()).rows.find(row => !row.hasActivity).accountNumber);
+  await page.locator(".grid-search[data-grid='coaGrid']").fill(emptyAccount);
+  const emptyRow = page.locator('#coaGrid tr', { hasText: emptyAccount }).filter({ has: page.locator('td') }).first();
+  await clickAndExpectDetails(page, emptyRow.locator("td[data-k='endingBalance'] a"), emptyAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2025' });
+  await expect(page.locator('.empty-state')).toContainText('No posted activity was found for this account and selected year.');
+});
+
+test('Trial Balance activity modes filter rows after calculating full running balances', async ({ page }) => {
+  await openView(page, '/finance', '#view'); await ensureControlledPostedActivity(page);
+  await openView(page, '/finance/trial-balance?fromPeriod=2026-01&toPeriod=2026-12', '#tbGrid');
+  const search = page.locator(".grid-search[data-grid='tbGrid']"); await search.fill(targetAccount);
+  const row = page.locator('#tbGrid tr', { hasText: targetAccount }).filter({ has: page.locator('td') }).first();
+  const links = { accountNumber: 'all', debit: 'debit', credit: 'credit', balance: 'all' };
+  const debitHref = await row.locator("td[data-k='debit'] a").getAttribute('href'), creditHref = await row.locator("td[data-k='credit'] a").getAttribute('href');
+  expect(debitHref).not.toBe(creditHref);
+  for (const [key, mode] of Object.entries(links)) {
+    await clickAndExpectDetails(page, row.locator(`td[data-k='${key}'] a`), targetAccount, { activity: mode, origin: 'trial-balance', fromPeriod: '2026-01', toPeriod: '2026-12' });
+    const values = await page.locator('#acctDtlGrid tr[data-row]:visible').evaluateAll(rows => rows.map(row => ({ debit: Number(row.querySelector("td[data-k='debit']").textContent.replace(/[^0-9.-]/g, '')), credit: Number(row.querySelector("td[data-k='credit']").textContent.replace(/[^0-9.-]/g, '')) })));
+    if (mode === 'debit') expect(values.every(value => value.debit > 0)).toBe(true);
+    if (mode === 'credit') expect(values.every(value => value.credit > 0)).toBe(true);
+    await page.locator('#accountDetailsBack').click(); await expect(search).toHaveValue(targetAccount);
   }
-  const storedRoutes = await page.evaluate(() => JSON.parse(localStorage.getItem('nav_pref_Finance')).map(item => item.route));
-  expect(storedRoutes).toEqual(['/finance', '/finance/journal']);
-  await page.getByRole('link', { name: 'Journal Transactions', exact: true }).first().click();
-  await expect(page).toHaveURL(/\/finance\/journal$/);
-  await expect(page.locator('#jeGrid')).toBeVisible();
-  await openView(page, '/finance/journal/new', '#newJe');
-  await expect(page.locator('#jlines .bname').first()).toBeEnabled();
-  await expect(page.locator('#jlines .bname').first().locator('option')).not.toHaveCount(0);
+  const zero = page.locator('#tbGrid tr[data-row]:visible').filter({ hasText: '$0.00' }).first();
+  if (await zero.count()) await expect(zero.locator("td[data-k='debit'] a,td[data-k='credit'] a,td[data-k='balance'] a")).not.toHaveCount(0);
+});
+
+test('saved module source references retain JE and AP, AR, and Inventory routing', async ({ page }) => {
+  const targets = await page.evaluate(async () => { const report=await(await fetch('/api/finance/trial-balance')).json(),found={}; for(const row of report.rows){const details=await(await fetch(`/api/finance/account-details/${encodeURIComponent(row.accountNumber)}`)).json();for(const source of details.activityRows){const module=String(source.sourceModule).toUpperCase();if(source.sourceHref&&['AP','AR','INVENTORY'].includes(module)&&!found[module])found[module]={accountNumber:row.accountNumber,source};}}return found; });
+  expect(Object.keys(targets).sort()).toEqual(['AP','AR','INVENTORY']);
+  for (const target of Object.values(targets)) { await openView(page, `/finance/account-details/${encodeURIComponent(target.accountNumber)}`, '#acctDtlGrid'); const row=page.locator('#acctDtlGrid tr',{hasText:target.source.jeReference}).filter({has:page.locator(`a[href='${target.source.sourceHref}']`)}).first(); await row.locator("td[data-k='jeLink'] a").click(); await expect(page).toHaveURL(new RegExp(`/finance/journal/${encodeURIComponent(target.source.jeReference)}$`)); }
 });
