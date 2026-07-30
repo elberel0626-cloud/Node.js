@@ -7,6 +7,7 @@ function captureBrowserErrors(page) {
   const errors = [];
   page.on('pageerror', error => errors.push(`pageerror: ${error.message}`));
   page.on('console', message => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+  page.on('requestfailed', request => errors.push(`requestfailed: ${request.method()} ${request.url()} ${request.failure()?.errorText || ''}`));
   return errors;
 }
 
@@ -49,7 +50,7 @@ async function clickAndExpectDetails(page, link, account, expectedParams) {
 test('Trial Balance is a Finance report and Journal Transactions remains working', async ({ page }) => {
   const browserErrors = captureBrowserErrors(page);
   await openView(page, '/finance', '#view');
-  expect(await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/app.js?v=finance-gl-20260730')))).toBe(true);
+  expect(await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/app.js?v=finance-gl-drilldown-20260730-2')))).toBe(true);
   const overviewReports = page.locator('#view section', { has: page.getByRole('heading', { name: 'Reports' }) });
   await expect(overviewReports.getByRole('link', { name: 'Trial Balance' })).toHaveCount(1);
   await expect(page.locator('#view section', { has: page.getByRole('heading', { name: 'Explore' }) }).getByRole('link', { name: 'Trial Balance' })).toHaveCount(0);
@@ -76,6 +77,14 @@ test('annual Chart of Accounts reports posted activity and restores year and gri
   await clickAndExpectDetails(page, row.locator("td[data-k='accountNumber'] a"), targetAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2026' });
   await page.locator('#accountDetailsBack').click();
   await expect(page).toHaveURL(/\/finance\/chart-of-accounts\?year=2026$/); await expect(search).toHaveValue(targetAccount);
+  const popupPromise = page.context().waitForEvent('page');
+  await row.locator("td[data-k='accountNumber'] a").click({ modifiers: ['Control'] });
+  const popup = await popupPromise; await popup.waitForLoadState('domcontentloaded');
+  await expect(popup).toHaveURL(/\/finance\/account-details\/1000\?/); await popup.close();
+  await clickAndExpectDetails(page, row.locator("td[data-k='debitActivity'] a"), targetAccount, { activity: 'debit', origin: 'chart-of-accounts', year: '2026' });
+  await page.locator('#accountDetailsBack').click();
+  await clickAndExpectDetails(page, row.locator("td[data-k='creditActivity'] a"), targetAccount, { activity: 'credit', origin: 'chart-of-accounts', year: '2026' });
+  await page.locator('#accountDetailsBack').click();
   await clickAndExpectDetails(page, row.locator("td[data-k='endingBalance'] a"), targetAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2026' });
   await page.locator('#accountDetailsBack').click();
   await page.locator('#coaYear').selectOption('2025'); await expect(page).toHaveURL(/year=2025/);

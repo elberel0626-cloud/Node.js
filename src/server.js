@@ -337,7 +337,7 @@ function createPostedJournal({module,description,postPeriod,transactionDate,sour
 
 
 function postedAccountLines(accountNumber){
- return journalEntries.filter(j=>j.status==='Posted').flatMap(j=>(j.lines||[]).map((line,lineIndex)=>({transactionDate:j.transactionDate,postPeriod:j.postPeriod||j.financialPeriod||'',jeReference:j.jeNumber,sourceModule:j.module||'Finance',sourceDocumentType:j.sourceDocumentType||'',sourceReference:line.sourceReference||j.sourceRef||'',lineDescription:line.lineDescription||line.description||j.description||'',debit:Number(line.debit||0),credit:Number(line.credit||0),lineIndex})).filter(line=>String(j.lines[line.lineIndex].account)===String(accountNumber))).sort((a,b)=>String(a.transactionDate).localeCompare(String(b.transactionDate))||String(a.jeReference).localeCompare(String(b.jeReference))||a.lineIndex-b.lineIndex);
+ return journalEntries.filter(j=>j.status==='Posted').flatMap(j=>(j.lines||[]).map((line,lineIndex)=>({transactionDate:j.transactionDate,postPeriod:j.postPeriod||j.financialPeriod||'',batchNumber:j.batchNumber||'',jeReference:j.jeNumber,sourceModule:j.module||'Finance',sourceDocumentType:j.sourceDocumentType||'',sourceReference:line.sourceReference||j.sourceRef||'',lineDescription:line.lineDescription||line.description||j.description||'',branch:line.branch||'',debit:Number(line.debit||0),credit:Number(line.credit||0),lineIndex})).filter(line=>String(j.lines[line.lineIndex].account)===String(accountNumber))).sort((a,b)=>String(a.transactionDate).localeCompare(String(b.transactionDate))||String(a.jeReference).localeCompare(String(b.jeReference))||a.lineIndex-b.lineIndex);
 }
 function trialBalanceReport(filters={}){
  const from=String(filters.fromPeriod||''),to=String(filters.toPeriod||'');
