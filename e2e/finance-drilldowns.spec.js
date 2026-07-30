@@ -3,6 +3,13 @@ import { test, expect, openView } from './fixtures/authenticated.js';
 const targetAccount = '1000';
 const offsetAccount = '1100';
 
+function captureBrowserErrors(page) {
+  const errors = [];
+  page.on('pageerror', error => errors.push(`pageerror: ${error.message}`));
+  page.on('console', message => { if (message.type() === 'error') errors.push(`console: ${message.text()}`); });
+  return errors;
+}
+
 async function ensureControlledPostedActivity(page) {
   await page.evaluate(async ({ targetAccount, offsetAccount }) => {
     const marker = 'E2E annual GL drilldown';
@@ -36,10 +43,13 @@ async function clickAndExpectDetails(page, link, account, expectedParams) {
   for (const [key, value] of Object.entries(expectedParams)) expect(actual.searchParams.get(key), key).toBe(value);
   await expect(page.locator('#view')).not.toContainText('Coming Soon');
   await expect(page.locator('#acctDtlGrid')).toBeVisible();
+  await expect(page.locator('#coaGrid, #tbGrid')).toHaveCount(0);
 }
 
 test('Trial Balance is a Finance report and Journal Transactions remains working', async ({ page }) => {
+  const browserErrors = captureBrowserErrors(page);
   await openView(page, '/finance', '#view');
+  expect(await page.evaluate(() => performance.getEntriesByType('resource').some(entry => entry.name.includes('/app.js?v=finance-gl-20260730')))).toBe(true);
   const overviewReports = page.locator('#view section', { has: page.getByRole('heading', { name: 'Reports' }) });
   await expect(overviewReports.getByRole('link', { name: 'Trial Balance' })).toHaveCount(1);
   await expect(page.locator('#view section', { has: page.getByRole('heading', { name: 'Explore' }) }).getByRole('link', { name: 'Trial Balance' })).toHaveCount(0);
@@ -49,9 +59,11 @@ test('Trial Balance is a Finance report and Journal Transactions remains working
   await expect(page.locator('#ar-nav')).not.toContainText('Reports (Coming Soon)');
   await openView(page, '/finance/journal', '#jeGrid');
   await expect(page.locator('#view')).not.toContainText('Coming Soon');
+  expect(browserErrors).toEqual([]);
 });
 
 test('annual Chart of Accounts reports posted activity and restores year and grid state', async ({ page }) => {
+  const browserErrors = captureBrowserErrors(page);
   await openView(page, '/finance', '#view');
   await ensureControlledPostedActivity(page);
   await openView(page, '/finance/chart-of-accounts?year=2026', '#coaGrid');
@@ -69,14 +81,16 @@ test('annual Chart of Accounts reports posted activity and restores year and gri
   await page.locator('#coaYear').selectOption('2025'); await expect(page).toHaveURL(/year=2025/);
   const annual = await page.evaluate(async () => Promise.all(['2025','2026'].map(async year => (await (await fetch('/api/finance/chart-of-accounts/annual?year='+year)).json()).rows.find(row => row.accountNumber === '1000').debitActivity)));
   expect(annual[0]).not.toBe(annual[1]);
-  const emptyAccount = await page.evaluate(async () => (await (await fetch('/api/finance/chart-of-accounts/annual?year=2025')).json()).rows.find(row => !row.hasActivity).accountNumber);
+  const emptyAccount = await page.evaluate(async () => (await (await fetch('/api/finance/chart-of-accounts/annual?year=2025')).json()).rows.find(row => !row.hasActivity && row.endingBalance === 0).accountNumber);
   await page.locator(".grid-search[data-grid='coaGrid']").fill(emptyAccount);
   const emptyRow = page.locator('#coaGrid tr', { hasText: emptyAccount }).filter({ has: page.locator('td') }).first();
   await clickAndExpectDetails(page, emptyRow.locator("td[data-k='endingBalance'] a"), emptyAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2025' });
   await expect(page.locator('.empty-state')).toContainText('No posted activity was found for this account and selected year.');
+  expect(browserErrors).toEqual([]);
 });
 
 test('Trial Balance activity modes filter rows after calculating full running balances', async ({ page }) => {
+  const browserErrors = captureBrowserErrors(page);
   await openView(page, '/finance', '#view'); await ensureControlledPostedActivity(page);
   await openView(page, '/finance/trial-balance?fromPeriod=2026-01&toPeriod=2026-12', '#tbGrid');
   const search = page.locator(".grid-search[data-grid='tbGrid']"); await search.fill(targetAccount);
@@ -91,8 +105,13 @@ test('Trial Balance activity modes filter rows after calculating full running ba
     if (mode === 'credit') expect(values.every(value => value.credit > 0)).toBe(true);
     await page.locator('#accountDetailsBack').click(); await expect(search).toHaveValue(targetAccount);
   }
-  const zero = page.locator('#tbGrid tr[data-row]:visible').filter({ hasText: '$0.00' }).first();
-  if (await zero.count()) await expect(zero.locator("td[data-k='debit'] a,td[data-k='credit'] a,td[data-k='balance'] a")).not.toHaveCount(0);
+  const zeroTarget = await page.evaluate(async () => { const report=await(await fetch('/api/finance/trial-balance?fromPeriod=2026-01&toPeriod=2026-12')).json(); const row=report.rows.find(item=>item.debit===0||item.credit===0||item.balance===0); return {accountNumber:row.accountNumber,key:row.debit===0?'debit':row.credit===0?'credit':'balance',mode:row.debit===0?'debit':row.credit===0?'credit':'all'}; });
+  await search.fill(zeroTarget.accountNumber);
+  const zeroRow = page.locator('#tbGrid tr', { hasText: zeroTarget.accountNumber }).filter({ has: page.locator('td') }).first();
+  const zeroLink = zeroRow.locator(`td[data-k='${zeroTarget.key}'] a`);
+  await expect(zeroLink).toHaveText('$0.00');
+  await clickAndExpectDetails(page, zeroLink, zeroTarget.accountNumber, { activity: zeroTarget.mode, origin: 'trial-balance', fromPeriod: '2026-01', toPeriod: '2026-12' });
+  expect(browserErrors).toEqual([]);
 });
 
 test('saved module source references retain JE and AP, AR, and Inventory routing', async ({ page }) => {
