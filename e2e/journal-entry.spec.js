@@ -59,8 +59,11 @@ test('manual JE workspace grows and line descriptions survive save and post', as
   await expect(page.locator('.je-line-description').nth(0)).toHaveValue('Monthly accrual, operations.');
   await expect(page.locator('.je-line-description').nth(1)).toHaveValue('Offset to accrued liabilities.');
   await expect(page.locator('#jeDelete')).toBeVisible();
-  await expect(page.locator('#jeNew')).toBeVisible();
+  await expect(page.locator('#jeNew')).toHaveText('+');
   await expect(page.locator('#jeReclass')).toHaveCount(0);
+  for (const [id, symbol] of [['firstRec', '|<'], ['prevRec', '<'], ['nextRec', '>'], ['lastRec', '>|']]) {
+    await expect(page.locator(`#${id}`)).toHaveText(symbol);
+  }
 
   await openView(page, new URL(jeUrl).pathname, '#jeLines');
   await expect(page.locator('.je-line-description').nth(0)).toHaveValue('Monthly accrual, operations.');
@@ -68,8 +71,13 @@ test('manual JE workspace grows and line descriptions survive save and post', as
   await expect(page.locator('#jeLines')).toBeVisible();
   await expect(page.locator('#jeLines tr').nth(1)).toContainText('Monthly accrual, operations.');
   await expect(page.locator('#jeLines tr').nth(2)).toContainText('Offset to accrued liabilities.');
-  await expect(page.locator('#jeNew')).toBeVisible();
+  await expect(page.locator('#jeNew')).toHaveText('+');
   await expect(page.locator('#jeReclass')).toBeVisible();
+  await expect(page.locator('#jeLines thead th')).toHaveText([
+    'Account', 'Branch', 'Account Description', 'Debit', 'Credit', 'Line Description',
+  ]);
+  await expect(page.locator('#jeLines thead')).not.toContainText('Department / Cost Center');
+  await expect(page.locator('#jeLines thead')).not.toContainText('Source Reference');
   await expect(page.locator('#jeDelete')).toHaveCount(0);
 });
 
