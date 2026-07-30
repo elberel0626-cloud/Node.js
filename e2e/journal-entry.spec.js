@@ -64,6 +64,13 @@ test('manual JE workspace grows and line descriptions survive save and post', as
   for (const [id, symbol] of [['firstRec', '|<'], ['prevRec', '<'], ['nextRec', '>'], ['lastRec', '>|']]) {
     await expect(page.locator(`#${id}`)).toHaveText(symbol);
   }
+  await expect(page.locator('#firstRec')).toBeEnabled();
+  await expect(page.locator('#prevRec')).toBeEnabled();
+  await page.locator('#prevRec').click();
+  await expect(page).not.toHaveURL(jeUrl);
+  await expect(page.locator('#lastRec')).toBeEnabled();
+  await page.locator('#lastRec').click();
+  await expect(page).toHaveURL(jeUrl);
 
   await openView(page, new URL(jeUrl).pathname, '#jeLines');
   await expect(page.locator('.je-line-description').nth(0)).toHaveValue('Monthly accrual, operations.');
