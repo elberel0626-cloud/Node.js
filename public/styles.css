@@ -11,6 +11,7 @@ table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(-
 .grid-check-col{width:40px;min-width:40px;max-width:40px;padding:4px 6px;text-align:center}
 .header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .link{color:#1f5fae;cursor:pointer;text-decoration:underline}
+.gl-drill-link{display:block;width:100%;min-height:100%;cursor:pointer;color:var(--blue);text-decoration:underline;pointer-events:auto;position:relative;z-index:2}
 .erp-toolbar{display:flex;gap:6px;flex-wrap:wrap;background:#fff;border:1px solid var(--border);padding:8px;margin-bottom:8px}
 .erp-toolbar select{background:var(--blue);color:#fff;border:none;cursor:pointer}
 .erp-toolbar select:disabled{background:#91a0b3;color:#eef3fa;cursor:not-allowed}
