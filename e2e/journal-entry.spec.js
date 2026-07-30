@@ -16,6 +16,8 @@ async function expectWorkspaceContainsJournal(page) {
       workspaceBottom: workspace.bottom,
       gridLeft: grid.left,
       gridRight: grid.right,
+      gridTop: grid.top,
+      workspaceTop: workspace.top,
       finalLineBottom: finalLine.bottom,
       actionsTop: actions.top,
       actionsBottom: actions.bottom,
@@ -23,7 +25,9 @@ async function expectWorkspaceContainsJournal(page) {
     };
   });
   expect(geometry.actionsBottom).toBeLessThanOrEqual(geometry.workspaceBottom + 1);
-  expect(geometry.finalLineBottom).toBeLessThan(geometry.actionsTop);
+  expect(geometry.actionsTop).toBeGreaterThanOrEqual(geometry.workspaceTop);
+  expect(geometry.actionsBottom).toBeLessThan(geometry.gridTop);
+  expect(geometry.finalLineBottom).toBeLessThan(geometry.workspaceBottom);
   expect(geometry.gridLeft).toBeGreaterThanOrEqual(0);
   expect(geometry.gridRight).toBeLessThanOrEqual(await page.evaluate(() => innerWidth));
   expect(geometry.pageCanScroll).toBe(true);
@@ -32,6 +36,8 @@ async function expectWorkspaceContainsJournal(page) {
 test('manual JE workspace grows and line descriptions survive save and post', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   await openView(page, '/finance/journal/new', '#newJe');
+  await expect(page.locator('#newJeBack')).toBeVisible();
+  await expect(page.locator('.new-je-actions')).toContainText('Save & Close');
 
   for (const count of [1, 10, 25, 50]) {
     await setLineCount(page, count);
@@ -52,6 +58,9 @@ test('manual JE workspace grows and line descriptions survive save and post', as
   const jeUrl = page.url();
   await expect(page.locator('.je-line-description').nth(0)).toHaveValue('Monthly accrual, operations.');
   await expect(page.locator('.je-line-description').nth(1)).toHaveValue('Offset to accrued liabilities.');
+  await expect(page.locator('#jeDelete')).toBeVisible();
+  await expect(page.locator('#jeNew')).toBeVisible();
+  await expect(page.locator('#jeReclass')).toHaveCount(0);
 
   await openView(page, new URL(jeUrl).pathname, '#jeLines');
   await expect(page.locator('.je-line-description').nth(0)).toHaveValue('Monthly accrual, operations.');
@@ -59,6 +68,9 @@ test('manual JE workspace grows and line descriptions survive save and post', as
   await expect(page.locator('#jeLines')).toBeVisible();
   await expect(page.locator('#jeLines tr').nth(1)).toContainText('Monthly accrual, operations.');
   await expect(page.locator('#jeLines tr').nth(2)).toContainText('Offset to accrued liabilities.');
+  await expect(page.locator('#jeNew')).toBeVisible();
+  await expect(page.locator('#jeReclass')).toBeVisible();
+  await expect(page.locator('#jeDelete')).toHaveCount(0);
 });
 
 test('module-generated journals retain their system source references', async ({ page }) => {

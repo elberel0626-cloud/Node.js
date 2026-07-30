@@ -201,7 +201,7 @@ body:has(.new-ap-bill) .erp-lookup-panel.party-suggestions{z-index:30000!importa
 .new-je-lines-scroll #jlines input,.new-je-lines-scroll #jlines select{min-width:110px;width:100%}
 .new-je-lines-scroll #jlines .line-desc{min-width:240px;max-width:420px}
 .new-journal-entry-screen .je-totals{margin-top:4px;flex-wrap:wrap}
-.new-je-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:8px;padding-top:18px;border-top:1px solid var(--border)}
+.new-je-actions{display:flex;justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 4px;padding:0 0 12px;border-bottom:1px solid var(--border)}
 body:has(.new-journal-entry-screen){overflow-x:hidden;overflow-y:auto}
 body:has(.new-journal-entry-screen) #app{height:auto;min-height:100vh;overflow:visible}
 body:has(.new-journal-entry-screen) .main,body:has(.new-journal-entry-screen) .content,body:has(.new-journal-entry-screen) #view{min-width:0;max-width:100%;overflow:visible}
