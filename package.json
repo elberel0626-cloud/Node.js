@@ -6,9 +6,25 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/data/seed.js"
+    "check": "node --check src/server.js && node --check src/security.js && node --check src/data/seed.js",
+    "test": "node --test test/*.test.js",
+    "test:security": "node --test test/security.test.js",
+    "test:e2e": "playwright test",
+    "lint": "npm run check",
+    "audit:ci": "npm audit --audit-level=high"
   },
   "optionalDependencies": {
-    "nodemailer": "^6.9.16"
+    "nodemailer": "9.0.3"
+  },
+  "dependencies": {
+    "@azure-rest/ai-document-intelligence": "1.1.0",
+    "argon2": "0.45.1",
+    "pdf-lib": "^1.17.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0"
+  },
+  "engines": {
+    "node": ">=22 <23"
   }
 }
