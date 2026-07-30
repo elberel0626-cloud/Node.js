@@ -21,7 +21,7 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['GET'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_READ'],
   [['POST'],/^\/api\/inventory\/documents\/post$/,'INVENTORY_POST'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_ADJUST'],
-  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
+  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions|account-details)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
   [['POST'],/^\/api\/finance\/journal-transactions\/post$/,'GL_JOURNAL_POST'],
   [['POST'],/^\/api\/finance\/journal-transactions\/reverse$/,'GL_JOURNAL_REVERSE'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/finance\/journal-transactions(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
