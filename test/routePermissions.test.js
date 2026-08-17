@@ -17,4 +17,7 @@ test('permission inventory is valid and Admin includes every mapped permission',
 test('AP users may submit bills while approval actions remain assignment-authorized',()=>{
   assert.equal(routePermission('POST','/api/ap/documents/BILL-1001/submit-approval'),'AP_BILL_SUBMIT');
   assert.equal(routePermission('POST','/api/ap/documents/BILL-1001/approval-action'),'AP_BILL_READ');
+  assert.equal(routePermission('POST','/api/ap/documents/post'),'AP_BILL_POST');
+  assert.ok(ROLE_PERMISSIONS['AP Clerk'].includes('AP_BILL_POST'));
+  assert.ok(ROLE_PERMISSIONS['AP Manager'].includes('AP_BILL_POST'));
 });
