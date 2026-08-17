@@ -27,8 +27,8 @@ export const ALL_PERMISSIONS = Object.freeze([
 export const ROLE_PERMISSIONS = Object.freeze({
   Admin: ALL_PERMISSIONS,
   Controller: ['AP_BILL_READ','AP_BILL_APPROVE','AP_BILL_POST','AP_BILL_VOID','AP_PAYMENT_APPROVE','AP_PAYMENT_RELEASE','AP_VENDOR_READ','AR_DOCUMENT_READ','AR_DOCUMENT_POST','AR_DOCUMENT_VOID','GL_JOURNAL_CREATE','GL_JOURNAL_EDIT','GL_JOURNAL_POST','GL_JOURNAL_REVERSE','GL_RECLASSIFY','FINANCIAL_PERIOD_CLOSE','FINANCIAL_PERIOD_REOPEN','PO_APPROVE','INVENTORY_READ','INVENTORY_POST'],
-  'AP Manager': ['AP_BILL_READ','AP_BILL_CREATE','AP_BILL_EDIT','AP_BILL_SUBMIT','AP_BILL_APPROVE','AP_PAYMENT_CREATE','AP_PAYMENT_APPROVE','AP_VENDOR_READ','AP_VENDOR_EDIT','AP_VENDOR_BANK_EDIT','AP_MATCH_OVERRIDE'],
-  'AP Clerk': ['AP_BILL_READ','AP_BILL_CREATE','AP_BILL_EDIT','AP_BILL_SUBMIT','AP_PAYMENT_CREATE','AP_VENDOR_READ'],
+  'AP Manager': ['AP_BILL_READ','AP_BILL_CREATE','AP_BILL_EDIT','AP_BILL_SUBMIT','AP_BILL_APPROVE','AP_BILL_POST','AP_PAYMENT_CREATE','AP_PAYMENT_APPROVE','AP_VENDOR_READ','AP_VENDOR_EDIT','AP_VENDOR_BANK_EDIT','AP_MATCH_OVERRIDE'],
+  'AP Clerk': ['AP_BILL_READ','AP_BILL_CREATE','AP_BILL_EDIT','AP_BILL_SUBMIT','AP_BILL_POST','AP_PAYMENT_CREATE','AP_VENDOR_READ'],
   'Procurement Approver': ['AP_BILL_READ','PO_CREATE','PO_APPROVE','PO_RECEIVE','AP_VENDOR_READ'],
   'IT Manager': ['AP_BILL_READ','AP_BILL_APPROVE'], 'Project Manager': ['AP_BILL_READ','AP_BILL_APPROVE'],
   CFO: ['AP_BILL_READ','AP_BILL_APPROVE','AP_PAYMENT_APPROVE','AP_PAYMENT_RELEASE','GL_JOURNAL_POST','FINANCIAL_PERIOD_CLOSE'], CEO: ['AP_BILL_READ','AP_BILL_APPROVE']
@@ -91,7 +91,13 @@ export class SecurityService {
 }
 
 export function securityHeaders(req,res) {
-  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+  // The review screen embeds only this authenticated PDF response. Keep every
+  // other ERP response unframeable, but allow this route's same-origin iframe;
+  // `frame-ancestors 'none'` on the PDF was the cause of "refused to connect".
+  const isIncomingPdf=/^\/api\/ap\/incoming-documents\/[^/]+\/file(?:\?|$)/.test(req.url||'');
+  const frameAncestors=isIncomingPdf?"'self'":"'none'";
+  res.setHeader('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors ${frameAncestors}; form-action 'self'`);
+  res.setHeader('X-Frame-Options',isIncomingPdf?'SAMEORIGIN':'DENY');
   res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()'); res.setHeader('Cross-Origin-Opener-Policy','same-origin'); res.setHeader('Cross-Origin-Resource-Policy','same-origin');
   if(req.url?.startsWith('/api/')||req.headers.cookie?.includes(`${COOKIE_NAME}=`)) res.setHeader('Cache-Control','no-store');
 }

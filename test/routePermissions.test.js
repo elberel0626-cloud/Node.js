@@ -14,3 +14,10 @@ test('every registered static business API route has an explicit method and perm
   assert.equal(routePermission('GET','/api/not-a-business-route'),null);
 });
 test('permission inventory is valid and Admin includes every mapped permission',()=>{const admin=new Set(ROLE_PERMISSIONS.Admin);for(const [methods,path,permission] of BUSINESS_ROUTE_PERMISSIONS){assert.ok(methods.length);assert.ok(path instanceof RegExp);assert.ok(ALL_PERMISSIONS.includes(permission));assert.ok(admin.has(permission));}});
+test('AP users may submit bills while approval actions remain assignment-authorized',()=>{
+  assert.equal(routePermission('POST','/api/ap/documents/BILL-1001/submit-approval'),'AP_BILL_SUBMIT');
+  assert.equal(routePermission('POST','/api/ap/documents/BILL-1001/approval-action'),'AP_BILL_READ');
+  assert.equal(routePermission('POST','/api/ap/documents/post'),'AP_BILL_POST');
+  assert.ok(ROLE_PERMISSIONS['AP Clerk'].includes('AP_BILL_POST'));
+  assert.ok(ROLE_PERMISSIONS['AP Manager'].includes('AP_BILL_POST'));
+});
