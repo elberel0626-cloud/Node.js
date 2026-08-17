@@ -91,7 +91,11 @@ export class SecurityService {
 }
 
 export function securityHeaders(req,res) {
-  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'");
+  // Incoming invoice PDFs are rendered in a same-origin iframe. Blocking every
+  // frame ancestor also blocks that authenticated preview, so permit only this
+  // ERP origin while continuing to deny framing by external sites.
+  res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'; form-action 'self'");
+  res.setHeader('X-Frame-Options','SAMEORIGIN');
   res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()'); res.setHeader('Cross-Origin-Opener-Policy','same-origin'); res.setHeader('Cross-Origin-Resource-Policy','same-origin');
   if(req.url?.startsWith('/api/')||req.headers.cookie?.includes(`${COOKIE_NAME}=`)) res.setHeader('Cache-Control','no-store');
 }
