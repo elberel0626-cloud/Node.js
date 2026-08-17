@@ -695,7 +695,7 @@ function postJE(doc,reverse=false){
   if(reverse) lines=lines.map(l=>({...l,debit:l.credit,credit:l.debit,sourceReference:doc.id}));
   return createPostedJournal({module:'AR',description:`${reverse?'Reversal of':'Auto from'} ${doc.id}`,postPeriod,transactionDate:postDate,sourceRef:doc.id,lines,reversalOf:reverse?doc.id:''});
 }
-function currentUser(req){ return authenticatedUser(req)||workflowUsers.find(u=>u.id==='admin'); }
+function currentUser(req){ return authenticatedUser(req)||workflowUsers.find(u=>u.id==='administrator')||workflowUsers.find(u=>(u.roles||[]).includes('Admin')); }
 function approvalUser(userId){ const user=security.store.users.find(item=>item.id===userId); return user?{id:user.id,name:user.name,email:user.email,status:user.active?'Active':'Inactive',roles:user.roles||[]}:null; }
 function vendorApprover(vendor){ return approvalUser(vendor?.approverUserId); }
 function userCanApprove(userId,approval){
