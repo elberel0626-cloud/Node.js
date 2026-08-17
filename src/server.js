@@ -17,6 +17,7 @@ import { FileSecurityStore, SecurityError, SecurityService, securityHeaders } fr
 import { routePermission } from './routePermissions.js';
 import { backfillVendorApprovers, transactionApproverId } from './vendorApprover.js';
 import { approvalStatus as invoiceApprovalStatus, assertBillPostable, NOT_SUBMITTED } from './apApprovalWorkflow.js';
+import { validatePdfUpload } from './pdfUpload.js';
 
 const publicDir = path.resolve('public');
 const security = new SecurityService({store:new FileSecurityStore()});
@@ -48,10 +49,8 @@ const parseMultipartPdf = async req => {
     const headers = part.slice(0, split), fileName = safeAttachmentName(headers.match(/filename="([^"]*)"/i)?.[1]);
     const mimeType = String(headers.match(/content-type:\s*([^\r\n]+)/i)?.[1] || '').toLowerCase();
     let content = Buffer.from(part.slice(split + 4), 'latin1'); if (content.subarray(-2).toString() === '\r\n') content = content.subarray(0, content.length - 2);
-    if (!/\.pdf$/i.test(fileName) || mimeType !== 'application/pdf') throw Object.assign(new Error('Only application/pdf files with a .pdf extension are allowed.'), { statusCode: 415 });
-    if (!content.subarray(0, 5).equals(Buffer.from('%PDF-'))) throw Object.assign(new Error('The selected file is not a valid PDF.'), { statusCode: 415 });
     if (!content.length || content.length > 15 * 1024 * 1024) throw Object.assign(new Error('PDF exceeds the 15 MB attachment limit.'), { statusCode: 413 });
-    return { fileName, mimeType, content };
+    return validatePdfUpload({ fileName, mimeType, content });
   }
   throw Object.assign(new Error('Select a PDF file to upload.'), { statusCode: 400 });
 };
