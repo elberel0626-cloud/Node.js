@@ -808,7 +808,7 @@ function submitBillForApproval(doc,{userId='admin',duplicateOverrideReason='',ap
   const vendor=vendors.find(v=>v.id===doc.vendorId); const approver=approvalUser(doc.approverUserId||vendor?.approverUserId);
   if(!approver||approver.status!=='Active') throw new Error('No approver is assigned to this bill. Please select an active approver before sending for approval.');
   const dupes=duplicateBills(doc); if(dupes.length&&!duplicateOverrideReason) throw new Error(`Potential duplicate invoice found: ${dupes.map(d=>d.id).join(', ')}. Enter an override reason to submit.`);
-  const old=invoiceApprovalStatus(doc); const now=new Date().toISOString(); doc.approvalRequired=true; doc.approvals=[{approvalId:`APRREC-${String(approvalSeq++).padStart(6,'0')}`,billId:doc.id,approvalLevel:1,assignedTo:approver.name,assignedToUser:approver.id,status:'Pending',dateAssigned:now,comments:''}]; doc.assignedApproverUserId=approver.id; doc.assignedApproverName=approver.name; doc.assignedApproverEmail=approver.email; doc.status='Saved'; doc.billApprovalStatus='Pending Approval'; doc.approvalStatus='Pending Approval'; doc.submittedBy=userId; doc.submittedDate=now; doc.duplicateOverrideReason=duplicateOverrideReason||''; doc.duplicateWarning=dupes.map(d=>d.id);
+  const old=invoiceApprovalStatus(doc); const now=new Date().toISOString(); doc.approvalRequired=true; doc.approvals=[{approvalId:`APRREC-${String(approvalSeq++).padStart(6,'0')}`,billId:doc.id,approvalLevel:1,assignedTo:approver.name,assignedToUser:approver.id,status:'Pending',dateAssigned:now,comments:''}]; doc.assignedApproverUserId=approver.id; doc.assignedApproverName=approver.name; doc.assignedApproverEmail=approver.email; doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; doc.approvalStatus='Pending Approval'; doc.submittedBy=userId; doc.submittedDate=now; doc.duplicateOverrideReason=duplicateOverrideReason||''; doc.duplicateWarning=dupes.map(d=>d.id);
   addWorkflowAudit({billId:doc.id,action:'Submit',userId,fromStatus:old,toStatus:'Pending Approval',comments:duplicateOverrideReason||'',metadata:{assignedApproverUserId:approver.id,duplicates:doc.duplicateWarning}}); addNotification({userId:approver.id,type:'Submitted',reference:doc.id,title:`AP bill ${doc.id} requires approval`,message:`${doc.vendorName} ${doc.vendorRef||''} for ${doc.amount}`});
   const link=`${approvalBaseUrl}/ap/approvals/${encodeURIComponent(doc.id)}`; approvalEmailOutbox.push({to:approver.email,name:approver.name,billId:doc.id,link,subject:`AP bill ${doc.id} requires approval`,queuedDate:now}); return {doc,approver,link};
 }
@@ -820,7 +820,7 @@ function approveBill(doc,{userId='admin',comments=''}={}){
   if(pendingAtLevel){ doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; }
   else { const nextLevel=Math.min(...(doc.approvals||[]).filter(a=>a.status==='Waiting').map(a=>a.approvalLevel)); const nextItems=(doc.approvals||[]).filter(a=>a.status==='Waiting'&&a.approvalLevel===nextLevel);
     if(nextItems.length){ for(const next of nextItems){ next.status='Pending'; next.dateAssigned=new Date().toISOString(); addNotification({userId:next.assignedToUser,type:'Submitted',reference:doc.id,title:`AP bill ${doc.id} routed to you`,message:`Level ${next.approvalLevel} approval is pending`}); } doc.status='Pending Approval'; doc.billApprovalStatus='Pending Approval'; }
-    else { doc.status='Saved'; doc.billApprovalStatus='Approved'; doc.approvalStatus='Approved'; addNotification({userId:doc.createdBy||'ap.clerk',type:'Approved',reference:doc.id,title:`AP bill ${doc.id} approved`,message:'Bill is approved and can be posted'}); }
+    else { doc.status='Pending Post'; doc.billApprovalStatus='Approved'; doc.approvalStatus='Approved'; addNotification({userId:doc.createdBy||'ap.clerk',type:'Approved',reference:doc.id,title:`AP bill ${doc.id} approved`,message:'Bill is approved and pending posting'}); }
   }
   addWorkflowAudit({billId:doc.id,action:'Approve',userId,fromStatus:old,toStatus:invoiceApprovalStatus(doc),comments}); return doc;
 }
@@ -900,7 +900,10 @@ function applyApSaveWorkflow(doc,userId='system'){
   if(!doc||doc.type!=='Bill'||doc.status==='Draft') return doc;
   doc.approvalExceptionReasons=apBillExceptions(doc);
   doc.approvalRequired=apApprovalRequired(doc);
-  if(!['Pending Approval','Approved'].includes(invoiceApprovalStatus(doc))){doc.status='Saved';doc.billApprovalStatus=NOT_SUBMITTED;doc.approvalStatus=NOT_SUBMITTED;doc.approvals=[];}
+  const approval=invoiceApprovalStatus(doc);
+  if(approval==='Pending Approval'){doc.status='Pending Approval';doc.billApprovalStatus='Pending Approval';doc.approvalStatus='Pending Approval';}
+  else if(approval==='Approved'){doc.status='Pending Post';doc.billApprovalStatus='Approved';doc.approvalStatus='Approved';}
+  else {doc.status='Saved';doc.billApprovalStatus=NOT_SUBMITTED;doc.approvalStatus=NOT_SUBMITTED;doc.approvals=[];}
   return doc;
 }
 function resetApprovalIfMaterialChange(doc,before,userId='system'){
