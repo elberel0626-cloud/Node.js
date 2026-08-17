@@ -1,0 +1,62 @@
+name: Port AP bill workflow fix to Development
+
+on:
+  push:
+    branches:
+      - fix/ap-bill-save-approval-posting-development
+
+permissions:
+  contents: write
+
+jobs:
+  port-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out Development-based repair branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: fix/ap-bill-save-approval-posting-development
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Port verified AP workflow fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git cherry-pick -X theirs 98538c3e6f040f08190fc5e32a3e9f8c02db6345
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run syntax, unit, and security tests
+        run: |
+          npm run check
+          npm test
+          npm run test:security
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Create ephemeral end-to-end administrator
+        shell: bash
+        run: |
+          echo "E2E_ADMIN_EMAIL=e2e-admin@example.com" >> "$GITHUB_ENV"
+          echo "E2E_ADMIN_PASSWORD=Verify-AP-2026!Strong" >> "$GITHUB_ENV"
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Remove temporary workflow and push verified port
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/ap-bill-development-port.yml
+          git commit -m "Remove temporary AP Development port workflow"
+          git push origin HEAD:fix/ap-bill-save-approval-posting-development
