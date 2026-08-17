@@ -46,7 +46,7 @@ jobs:
       - name: Run AP workflow end-to-end tests
         env:
           E2E_ADMIN_EMAIL: e2e-admin@example.com
-          E2E_ADMIN_PASSWORD: E2E-Admin-Password-2026!
+          E2E_ADMIN_PASSWORD: Verify-AP-2026!Strong
         run: npx playwright test e2e/ap-bill-workflow.spec.js e2e/ap-bill-attachments.spec.js --workers=1
 
       - name: Commit verified fix
