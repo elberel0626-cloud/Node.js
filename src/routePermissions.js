@@ -23,7 +23,7 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['GET'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_READ'],
   [['POST'],/^\/api\/inventory\/documents\/post$/,'INVENTORY_POST'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_ADJUST'],
-  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions|account-details|account-summary|account-by-period)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
+  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|reports|financial-periods?|financial-period-history|journal-transactions|account-details|account-summary|account-by-period)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
   [['GET','POST'],/^\/api\/attachments\/(?:JournalEntry)(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
   [['GET','POST'],/^\/api\/attachments\/(?:APBill|APCreditMemo|APPayment)(?:\/.*)?$/,'AP_BILL_READ'],
   [['GET','POST'],/^\/api\/attachments\/(?:ARInvoice|ARCreditMemo|ARPayment)(?:\/.*)?$/,'AR_DOCUMENT_READ'],
