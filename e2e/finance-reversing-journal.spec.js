@@ -42,6 +42,8 @@ test('manual reversing journal is created once after posting and remains editabl
 });
 
 test('closed reversal period still allows Saved generation but blocks posting clearly', async ({ page }) => {
+  await api(page,'/api/finance/financial-periods/action',{method:'POST',body:JSON.stringify({periodId:'2031-11',module:'GL',action:'Open',notes:'Reset reversal test period'})});
+  const prior=(await api(page,'/api/finance/journal-transactions')).body.filter(j=>j.postPeriod==='2031-11'&&['Saved','Draft'].includes(j.status));for(const journal of prior)await api(page,`/api/finance/journal-transactions/${journal.jeNumber}`,{method:'DELETE'});
   const close=await api(page,'/api/finance/financial-periods/action',{method:'POST',body:JSON.stringify({periodId:'2031-11',module:'GL',action:'Close',notes:'Reversal test'})});
   expect(close.status).toBe(200);
   const created=await api(page,'/api/finance/journal-transactions',{method:'POST',body:JSON.stringify({transactionDate:'2026-05-20',description:'Closed period reversal',isReversingJournalRequested:true,reversalDate:'2031-11-01',lines:[{account:'1079',branch:'100',debit:30,credit:0},{account:'2010',branch:'100',debit:0,credit:30}]})});
