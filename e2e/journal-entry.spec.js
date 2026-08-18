@@ -105,3 +105,33 @@ test('module-generated journals retain their system source references', async ({
   expect(result.sourceRef).not.toBe('');
   expect(result.lineReferences.some(reference => reference === result.sourceRef)).toBe(true);
 });
+
+test('journal and linked finance screens use JE numbers without batch-number fields', async ({ page }) => {
+  await openView(page, '/finance/journal', '#jeGrid');
+  await expect(page.getByRole('columnheader', { name: /JE Reference Number/ })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /Batch Number/ })).toHaveCount(0);
+
+  const result = await page.evaluate(async () => {
+    const [journalsResponse, receiptResponse] = await Promise.all([
+      fetch('/api/finance/journal-transactions'),
+      fetch('/api/purchase-orders/receipts/PR000001'),
+    ]);
+    return {
+      journals: await journalsResponse.json(),
+      receipt: await receiptResponse.json(),
+    };
+  });
+
+  expect(result.journals.length).toBeGreaterThan(0);
+  expect(result.journals.every(journal => journal.jeNumber && !Object.hasOwn(journal, 'batchNumber'))).toBe(true);
+  expect(result.receipt.jeReference).toMatch(/^JE/);
+  expect(Object.hasOwn(result.receipt, 'batchNbr')).toBe(false);
+  expect(result.receipt.financialDetails.every(row => row.jeNumber && !Object.hasOwn(row, 'batchNumber'))).toBe(true);
+
+  await openView(page, '/purchase-orders/receipts/PR000001', '.erp-workspace');
+  await expect(page.locator('label', { hasText: 'JE Number' })).toBeVisible();
+  await expect(page.getByText('Batch Number', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Financial Details' }).click();
+  await expect(page.locator('#receiptFinGrid')).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: /JE Number/ })).toBeVisible();
+});
