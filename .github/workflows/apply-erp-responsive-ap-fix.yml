@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/responsive-ap-posting-journal-descriptions
+  pull_request:
+    branches:
+      - fix/responsive-ap-posting-journal-descriptions
 
 permissions:
   contents: write
