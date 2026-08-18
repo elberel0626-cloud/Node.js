@@ -11,6 +11,7 @@ const viewports = [
 ];
 
 const routes = [
+  ['/ap/incoming-documents', '#incomingDocsGrid'],
   ['/ap/bills', '#apBillGrid'],
   ['/ap/payments', '#apPayGrid'],
   ['/finance/journal', '#jeGrid'],
@@ -54,6 +55,27 @@ test('wide AP bill lines scroll inside their own grid instead of widening the pa
   });
   expect(result.wrapperExists).toBe(true);
   expect(result.rootScrollWidth).toBeLessThanOrEqual(result.rootClientWidth + 2);
+  expect(['auto', 'scroll']).toContain(result.overflowX);
+  expect(result.wrapperScrollWidth).toBeGreaterThanOrEqual(result.wrapperClientWidth);
+});
+
+test('incoming documents list stays inside the viewport and scrolls only inside its grid', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openView(page, '/ap/incoming-documents', '#incomingDocsGrid');
+  const result = await page.evaluate(() => {
+    const table = document.querySelector('#incomingDocsGrid');
+    const wrapper = table?.closest('.grid-wrap') || table?.parentElement;
+    return {
+      rootScrollWidth: document.documentElement.scrollWidth,
+      rootClientWidth: document.documentElement.clientWidth,
+      wrapperExists: Boolean(wrapper),
+      wrapperScrollWidth: wrapper?.scrollWidth || 0,
+      wrapperClientWidth: wrapper?.clientWidth || 0,
+      overflowX: wrapper ? getComputedStyle(wrapper).overflowX : ''
+    };
+  });
+  expect(result.rootScrollWidth).toBeLessThanOrEqual(result.rootClientWidth + 2);
+  expect(result.wrapperExists).toBe(true);
   expect(['auto', 'scroll']).toContain(result.overflowX);
   expect(result.wrapperScrollWidth).toBeGreaterThanOrEqual(result.wrapperClientWidth);
 });
