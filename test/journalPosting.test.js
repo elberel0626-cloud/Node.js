@@ -27,3 +27,8 @@ test('manual-account restriction is not applied to system-generated journals', (
   assert.equal(isManualJournal(generated), false);
   assert.deepEqual(flags, [false, false]);
 });
+
+test('generated reversing journals retain manual account restrictions', () => {
+  const journal=valid({reversalOf:'JE000001',generatedFromReversingJournal:true,sourceRef:'JE000002'});
+  assert.throws(()=>validateJournalForPosting(journal,{validateAccount:(_code,{manual})=>{if(manual)throw new Error('manual restriction');}}),/manual restriction/);
+});
