@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - fix/responsive-ap-posting-journal-descriptions
+  pull_request:
+    branches:
+      - fix/responsive-ap-posting-journal-descriptions
 
 permissions:
   contents: write
@@ -52,7 +55,7 @@ jobs:
       - name: Syntax check
         run: npm run check
 
-      - name: Prepare isolated E2E security store
+      - name: Prepare isolated E2E data
         run: rm -rf data/security
 
       - name: Install Chromium
