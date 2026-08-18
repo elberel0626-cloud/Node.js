@@ -93,7 +93,7 @@ var setVendorActions = function setVendorActions() {
     const workspace = tab.closest('.erp-workspace');
     if (!workspace || !workspace.querySelector('#billDetails') || !workspace.querySelector('#billLines')) return;
 
-    const panelIds = ['billDetails', 'purchaseOrder', 'billLines', 'billNotes'];
+    const panelIds = ['billDetails', 'purchaseOrder', 'billLines', 'billNotes', 'billApprovals'];
     const targetId = tab.dataset.tab;
     const target = panelIds.includes(targetId) ? workspace.querySelector(`#${targetId}`) : null;
     if (!target) return;
