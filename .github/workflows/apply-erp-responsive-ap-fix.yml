@@ -1,79 +1,28 @@
-name: Apply ERP responsive and AP posting fix
+name: Verify ERP responsive and AP posting fix
 
 on:
-  push:
-    branches:
-      - fix/responsive-ap-posting-journal-descriptions
   pull_request:
     branches:
       - fix/responsive-ap-posting-journal-descriptions
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  apply-and-test:
-    if: github.actor != 'github-actions[bot]'
+  targeted-verification:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout fix branch
+      - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: fix/responsive-ap-posting-journal-descriptions
-          fetch-depth: 0
 
       - name: Set up Node 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Normalize patch helper and responsive source
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          patch=Path('scripts/apply_erp_fix.py')
-          s=patch.read_text()
-          s=s.replace(
-              "out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)",
-              "out, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)",
-              1
-          )
-          old="""    if count != 1:\n        raise SystemExit(f'{label}: expected exactly one match, found {count}')\n    return text.replace(old, new, 1)"""
-          new="""    if count != 1:\n        if label == 'responsive static asset serving' and '/responsive.css' in text:\n            return text\n        raise SystemExit(f'{label}: expected exactly one match, found {count}')\n    return text.replace(old, new, 1)"""
-          if old in s:
-              s=s.replace(old,new,1)
-          patch.write_text(s)
-
-          index=Path('public/index.html')
-          html=index.read_text()
-          html=html.replace("<link rel='stylesheet' href='/responsive.css?v=erp-responsive-20260817'>",'')
-          index.write_text(html)
-
-          server=Path('src/server.js')
-          src=server.read_text()
-          if "'/responsive.css'" not in src:
-              src,count=re.subn(
-                  r"async function serve\(p,res\)\{\s*if\(p==='/app\.js'\|\|p==='/styles\.css'\)",
-                  "async function serve(p,res){ if(['/app.js','/styles.css','/responsive.css'].includes(p))",
-                  src,
-                  count=1
-              )
-              if count != 1:
-                  raise SystemExit('Could not update static asset serving for responsive.css')
-              server.write_text(src)
-          PY
-
-      - name: Apply deterministic source patch
-        run: python scripts/apply_erp_fix.py
 
       - name: Install dependencies
         run: npm ci
@@ -92,12 +41,3 @@ jobs:
           E2E_ADMIN_EMAIL: e2e-admin@example.com
           E2E_ADMIN_PASSWORD: E2E-Strong-Password-2026!
         run: npx playwright test e2e/ap-posting-safety.spec.js e2e/responsive-layout.spec.js --workers=1
-
-      - name: Commit verified source changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/server.js public/index.html scripts/apply_erp_fix.py
-          git diff --cached --check
-          git commit -m "Fix responsive layout and safe AP posting"
-          git push origin HEAD:fix/responsive-ap-posting-journal-descriptions
