@@ -326,7 +326,7 @@ function requireAccount(code,context='Posting account'){
 const bump=(code,side,amt)=>{const accountCode=requireAccount(code); const a=acct(accountCode); const value=Number(amt||0); if(!value)return; if(side==='Debit'){a.debits=Number(a.debits||0)+value; a.balance=Number(a.balance||0)+value;} if(side==='Credit'){a.credits=Number(a.credits||0)+value; a.balance=Number(a.balance||0)-value;}};
 const nextJeNumber=(prefix='JE')=>`${prefix}${String(journalEntries.length+1).padStart(6,'0')}`;
 function createPostedJournal({module,description,postPeriod,transactionDate,sourceRef,lines,createdBy='system',reversalOf='',reclassOf='',auditTrail=[]}){
-  const normalized=(lines||[]).map(l=>({account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference:l.sourceReference||sourceRef||'',lineDescription:l.lineDescription||l.description||'',description:l.lineDescription||l.description||'',branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'})).filter(l=>l.debit||l.credit);
+  const normalized=(lines||[]).map(l=>{const sourceReference=l.sourceReference||sourceRef||'';const lineDescription=String(l.lineDescription||l.description||([module,sourceReference].filter(Boolean).join(' ')||description||'System posting')).trim().slice(0,255);return{account:requireAccount(l.account||l.a,'Posting account'),debit:Number(l.debit??l.dr??0),credit:Number(l.credit??l.cr??0),sourceReference,lineDescription,description:lineDescription,branch:l.branch||'100',branchName:l.branchName||'Chicago HQ'};}).filter(l=>l.debit||l.credit);
   const dr=normalized.reduce((s,l)=>s+l.debit,0); const cr=normalized.reduce((s,l)=>s+l.credit,0);
   if(!normalized.length) throw new Error('Journal entry must have at least one line');
   if(Math.round((dr-cr)*100)!==0) throw new Error(`Journal entry is out of balance: debits ${dr} credits ${cr}`);
@@ -860,30 +860,59 @@ function runEscalations(userId='admin'){
   return applied;
 }
 
+function apDocumentLabel(doc){
+  if(doc.type==='Payment') return 'AP Payment';
+  if(doc.type==='Prepayment') return 'AP Prepayment';
+  if(doc.type==='Credit Adjustment') return 'AP Credit Adjustment';
+  if(doc.type==='Debit Adjustment') return 'AP Debit Adjustment';
+  return 'AP Bill';
+}
+function apPostingLineDescription(doc,line={},role=''){
+  const parts=[`${apDocumentLabel(doc)} ${doc.id}`];
+  const vendorInvoice=String(doc.vendorRef||doc.invoiceNumber||'').trim();
+  const po=String(line.poNumber||line.sourcePoId||line.poId||'').trim();
+  const receipt=String(line.receiptNumber||line.sourceReceiptId||line.receiptId||'').trim();
+  const detail=String(line.lineDescription||line.description||line.inventoryId||line.itemId||'').trim();
+  if(vendorInvoice) parts.push(`Vendor Invoice ${vendorInvoice}`);
+  if(po) parts.push(`PO ${po}`);
+  if(receipt) parts.push(`Receipt ${receipt}`);
+  if(detail&&detail!==role) parts.push(detail);
+  if(role) parts.push(role);
+  return parts.filter(Boolean).join(' | ').slice(0,255);
+}
 function apPostingLines(doc){
-  const amt=Number(doc.amount||0);
+  const amt=Number(doc.amount||0),branch=doc.branch||'100';
   if(doc.type==='Payment') return [
-    {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id},
-    {account:requireAccount(String(doc.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],'AP cash account'),debit:0,credit:amt,sourceReference:doc.id}
+    {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Accounts Payable'),branch},
+    {account:requireAccount(String(doc.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],'AP cash account'),debit:0,credit:amt,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Cash'),branch}
   ];
   if(doc.type==='Prepayment') return [
-    {account:POSTING_ACCOUNTS.vendorDeposit,debit:amt,credit:0,sourceReference:doc.id},
-    {account:requireAccount(String(doc.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],'AP cash account'),debit:0,credit:amt,sourceReference:doc.id}
+    {account:POSTING_ACCOUNTS.vendorDeposit,debit:amt,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Vendor Deposit'),branch},
+    {account:requireAccount(String(doc.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],'AP cash account'),debit:0,credit:amt,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Cash'),branch}
   ];
   if(doc.type==='Credit Adjustment') return [
-    {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id},
-    {account:POSTING_ACCOUNTS.returnsAllowances,debit:0,credit:amt,sourceReference:doc.id}
+    {account:POSTING_ACCOUNTS.accountsPayable,debit:amt,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Accounts Payable'),branch},
+    {account:POSTING_ACCOUNTS.returnsAllowances,debit:0,credit:amt,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Returns / Allowances'),branch}
   ];
-  const docLines=(doc.lines||[]).length?doc.lines:[{amount:amt,expenseAccount:doc.expenseAccount}];
-  const lineTotal=docLines.reduce((s,l)=>s+Number(l.amount||l.lineTotal||0),0)||amt;
+  const docLines=(doc.lines||[]).length?doc.lines:[{amount:amt,expenseAccount:doc.expenseAccount,description:doc.description||''}];
+  const baseAmounts=docLines.map(line=>Number(line.amount??line.lineTotal??line.extendedCost??apLineAmount(line)??0));
+  const baseTotal=Number(baseAmounts.reduce((sum,value)=>sum+value,0).toFixed(2));
+  const headerExtra=Number((amt-baseTotal).toFixed(2));
+  let allocatedExtra=0;
   const lines=[];
-  for(const line of docLines){
+  for(let index=0;index<docLines.length;index++){
+    const line=docLines[index],base=baseAmounts[index];
     const invItem=itemMaster.find(i=>i.code===(line.inventoryId||line.itemId||line.itemCode));
     const expenseAccount=(line.poNumber||line.receiptNumber||line.sourcePoId||line.sourceReceiptId)?requireAccount(line.rniAccount||line.apAccrualAccount||POSTING_ACCOUNTS.poRni,'AP bill RNI account'):(isStockItem(invItem)?requireAccount(invItem.inventoryAccount,'AP bill inventory account'):requireAccount(sourceAccountFromLine(line,['expenseAccount','account'],''),'AP bill expense account'));
-    const lineAmount=Number(line.amount||line.lineTotal||0)||amt*(Number(lineTotal)?Number(line.amount||line.lineTotal||0)/lineTotal:1);
-    if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount,credit:0,sourceReference:doc.id});
+    let extra=0;
+    if(headerExtra){
+      if(index===docLines.length-1) extra=Number((headerExtra-allocatedExtra).toFixed(2));
+      else { const weight=baseTotal?base/baseTotal:1/docLines.length; extra=Number((headerExtra*weight).toFixed(2)); allocatedExtra=Number((allocatedExtra+extra).toFixed(2)); }
+    }
+    const lineAmount=Number((base+extra).toFixed(2));
+    if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,line),branch:line.branch||branch});
   }
-  lines.push({account:POSTING_ACCOUNTS.accountsPayable,debit:0,credit:amt,sourceReference:doc.id});
+  lines.push({account:POSTING_ACCOUNTS.accountsPayable,debit:0,credit:amt,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,{},'Accounts Payable'),branch});
   return lines;
 }
 
@@ -948,12 +977,87 @@ function processApBillPoMatches(doc){
 }
 function postApJE(doc,reverse=false){
   const postDate=doc.postDate||doc.date||new Date().toISOString().slice(0,10); const postPeriod=doc.postPeriod||periodFromDate(postDate); validatePeriodOpen('GL',postPeriod);
+  if(!reverse){
+    const existing=journalEntries.find(entry=>entry.module==='AP'&&entry.sourceRef===doc.id&&!entry.reversalOf);
+    if(existing){doc.jeNumber=existing.jeNumber;doc.journalEntryNumber=existing.jeNumber;doc.journalEntryId=existing.id||existing.jeNumber;doc.batchNumber=existing.batchNumber||'';return existing.jeNumber;}
+  }
   let lines=apPostingLines(doc);
-  if(reverse) lines=lines.map(l=>({...l,debit:l.credit,credit:l.debit,sourceReference:doc.id}));
+  if(reverse) lines=lines.map(l=>({...l,debit:l.credit,credit:l.debit,sourceReference:doc.id,lineDescription:`Reversal | ${l.lineDescription||apPostingLineDescription(doc)}`.slice(0,255)}));
   const je=createPostedJournal({module:'AP',description:`${reverse?'Reversal of':'Auto from'} ${doc.id}`,postPeriod,transactionDate:postDate,sourceRef:doc.id,lines,reversalOf:reverse?doc.id:''});
   if(!reverse){ const journal=journalEntries.find(entry=>entry.jeNumber===je); doc.jeNumber=je; doc.journalEntryNumber=je; doc.journalEntryId=journal?.id||je; doc.batchNumber=journal?.batchNumber||''; }
   if(!reverse){ for(const line of (doc.lines||[])){ if(line.poNumber||line.receiptNumber||line.sourcePoId||line.sourceReceiptId) continue; const item=itemMaster.find(i=>i.code===(line.inventoryId||line.itemId||line.itemCode)); if(isStockItem(item)){ const qty=Number(line.qty||line.quantity||0); if(qty>0){ adjustInventoryBalance({itemId:item.code,warehouse:line.warehouse||item.defaultWarehouse||'MAIN',location:line.location||item.defaultLocation||'MAIN-A1',qtyIn:qty,unitCost:Number(line.unitCost||line.cost||itemCost(item))}); createInvAudit({transactionType:'AP Receipt',referenceNumber:doc.id,sourceModule:'AP',sourceReference:doc.id,itemId:item.code,warehouse:line.warehouse||item.defaultWarehouse||'MAIN',location:line.location||item.defaultLocation||'MAIN-A1',quantityIn:qty,unitCost:Number(line.unitCost||line.cost||itemCost(item)),postDate,postPeriod,jeReference:je}); } } } }
   return je;
+}
+function apPostingBusinessError(message,statusCode=400,code='AP_POSTING_VALIDATION'){
+  const error=new Error(message); error.statusCode=statusCode; error.code=code; return error;
+}
+function validateApBillPoPosting(doc){
+  if(doc.type!=='Bill') return;
+  for(const [index,line] of (doc.lines||[]).entries()){
+    const poNo=line.poNumber||line.sourcePoId||line.poId; if(!poNo) continue;
+    const po=purchaseOrders.find(p=>p.poNumber===poNo||p.id===poNo); if(!po) throw apPostingBusinessError(`Purchase Order ${poNo} was not found.`);
+    const poLine=purchaseOrderLines.find(l=>l.poId===po.id&&((line.poLineId&&l.id===line.poLineId)||(!line.poLineId&&(l.inventoryId===line.inventoryId||l.itemId===line.itemId))));
+    if(!poLine) throw apPostingBusinessError(`Purchase Order line for ${line.inventoryId||line.poLineId||`line ${index+1}`} was not found.`);
+    const qty=Number(line.qty||line.quantity||0),item=itemMaster.find(i=>i.code===poLine.inventoryId),basis=isStockItem(item)?Number(poLine.qtyReceived||0):Number(poLine.qtyOrdered||0),available=Math.max(0,basis-Number(poLine.qtyBilled||0));
+    if(qty<=0) throw apPostingBusinessError(`Bill quantity on line ${index+1} must be greater than zero.`);
+    if(qty>available) throw apPostingBusinessError(isStockItem(item)?`Line ${index+1} cannot bill ${qty}; only ${available} received quantity remains unbilled.`:`Line ${index+1} cannot bill ${qty}; only ${available} ordered quantity remains unbilled.`);
+    const receiptNo=line.receiptNumber||line.sourceReceiptId||line.receiptId;
+    if(receiptNo){
+      const receipt=purchaseReceipts.find(r=>r.receiptNumber===receiptNo||r.id===receiptNo); if(!receipt) throw apPostingBusinessError(`Purchase Receipt ${receiptNo} was not found.`);
+      if(receipt.poId&&receipt.poId!==po.id) throw apPostingBusinessError(`Purchase Receipt ${receiptNo} does not belong to Purchase Order ${po.poNumber||po.id}.`);
+      const receiptLine=purchaseReceiptLines.find(x=>x.receiptId===receipt.id&&x.poLineId===poLine.id); if(!receiptLine) throw apPostingBusinessError(`Purchase Receipt ${receiptNo} does not contain the selected PO line.`);
+      const receiptAvailable=Math.max(0,Number(receiptLine.receiptQty||0)-Number(receiptLine.qtyBilled||0));
+      if(qty>receiptAvailable) throw apPostingBusinessError(`Purchase Receipt ${receiptNo} has only ${receiptAvailable} unbilled quantity available on line ${index+1}.`);
+    }
+  }
+}
+function snapshotApPostingState(){
+  return {
+    apDocuments:structuredClone(apDocuments),glAccounts:structuredClone(glAccounts),journalEntries:structuredClone(journalEntries),purchaseOrders:structuredClone(purchaseOrders),purchaseOrderLines:structuredClone(purchaseOrderLines),purchaseReceipts:structuredClone(purchaseReceipts),purchaseReceiptLines:structuredClone(purchaseReceiptLines),poBillLinks:structuredClone(poBillLinks),poStatusHistory:structuredClone(poStatusHistory),inventoryBalances:structuredClone(inventoryBalances),inventoryTransactions:structuredClone(inventoryTransactions),itemMaster:structuredClone(itemMaster),workflowAuditLog:structuredClone(workflowAuditLog),applicationSeq,auditSeq
+  };
+}
+function restoreApPostingState(snapshot){
+  const restore=(target,rows)=>target.splice(0,target.length,...structuredClone(rows));
+  restore(apDocuments,snapshot.apDocuments);restore(glAccounts,snapshot.glAccounts);restore(journalEntries,snapshot.journalEntries);restore(purchaseOrders,snapshot.purchaseOrders);restore(purchaseOrderLines,snapshot.purchaseOrderLines);restore(purchaseReceipts,snapshot.purchaseReceipts);restore(purchaseReceiptLines,snapshot.purchaseReceiptLines);restore(poBillLinks,snapshot.poBillLinks);restore(poStatusHistory,snapshot.poStatusHistory);restore(inventoryBalances,snapshot.inventoryBalances);restore(inventoryTransactions,snapshot.inventoryTransactions);restore(itemMaster,snapshot.itemMaster);restore(workflowAuditLog,snapshot.workflowAuditLog);applicationSeq=snapshot.applicationSeq;auditSeq=snapshot.auditSeq;
+}
+function validateApPostingRequest(doc,{duplicateOverrideReason=''}={}){
+  try{
+    const pp=doc.postPeriod||periodFromDate(doc.postDate||doc.date); validateSourceAndGlOpen('AP',pp);
+    if(doc.hold) throw apPostingBusinessError('Document is on hold and cannot be released');
+    if(Number(doc.amount)<=0) throw apPostingBusinessError(['Payment','Prepayment'].includes(doc.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.');
+    validateApBillAmount(doc);
+    if(doc.type==='Bill'){
+      assertBillPostable(doc); const dupes=duplicateBills(doc); if(dupes.length&&!duplicateOverrideReason) throw apPostingBusinessError(`Potential duplicate invoice found: ${dupes.map(x=>x.id).join(', ')}. Review duplicate bill before posting.`);
+      validateApBillPoPosting(doc);
+    } else if(doc.type==='Prepayment'){
+      if(doc.status!=='Approved'||doc.paymentApprovalStatus!=='Approved For Payment') throw apPostingBusinessError('Vendor prepayment must be approved before posting.');
+    } else if(doc.status!=='Saved') throw apPostingBusinessError('Only Saved transactions can be posted');
+    if(['Payment','Prepayment'].includes(doc.type)){syncApPaymentReview(doc);const payStatus=doc.paymentApprovalStatus||'Not Required';if(payStatus==='Pending Payment Approval')throw apPostingBusinessError('Payment batch requires payment approval before posting.');}
+    const lines=apPostingLines(doc),dr=lines.reduce((sum,line)=>sum+Number(line.debit||0),0),cr=lines.reduce((sum,line)=>sum+Number(line.credit||0),0);
+    if(!lines.length) throw apPostingBusinessError('AP posting must create at least one journal line.');
+    if(Math.round((dr-cr)*100)!==0) throw apPostingBusinessError(`AP posting is out of balance before release: debits ${dr.toFixed(2)} credits ${cr.toFixed(2)}.`);
+    return {postPeriod:pp,journalLines:lines};
+  }catch(error){if(!error.statusCode){error.statusCode=400;error.code=error.code||'AP_POSTING_VALIDATION';}throw error;}
+}
+function postApDocumentSafely(doc,{duplicateOverrideReason='',userId='admin'}={}){
+  const existing=journalEntries.find(entry=>entry.module==='AP'&&entry.sourceRef===doc.id&&!entry.reversalOf);
+  if(doc.posted&&existing){doc.jeNumber=existing.jeNumber;doc.journalEntryNumber=existing.jeNumber;doc.journalEntryId=existing.id||existing.jeNumber;doc.batchNumber=existing.batchNumber||'';return{document:doc,journal:existing,alreadyPosted:true};}
+  if(doc.posted&&!existing) throw apPostingBusinessError(`AP document ${doc.id} is marked posted but its journal entry is missing. Posting was stopped to prevent inconsistent accounting.`,409,'AP_POSTING_INCONSISTENT');
+  if(existing&&!doc.posted) throw apPostingBusinessError(`AP document ${doc.id} already has journal entry ${existing.jeNumber} but is not marked posted. Posting was stopped to prevent a duplicate journal.`,409,'AP_POSTING_PARTIAL');
+  validateApPostingRequest(doc,{duplicateOverrideReason});
+  const snapshot=snapshotApPostingState(),billId=doc.id,oldStatus=doc.status;
+  try{
+    if(['Payment','Prepayment'].includes(doc.type)) releaseApPaymentApplications(doc,doc.postDate||doc.date);
+    if(doc.type==='Bill') processApBillPoMatches(doc);
+    const jeNumber=postApJE(doc,false);
+    doc.posted=true; doc.status=(Number(doc.balance||doc.unappliedBalance||0)===0)?'Closed':'Open';
+    addWorkflowAudit({billId:doc.id,action:'Post',userId,fromStatus:oldStatus,toStatus:doc.status,comments:`Posted to AP and GL as ${jeNumber}`});
+    return{document:doc,journal:journalEntries.find(entry=>entry.jeNumber===jeNumber),alreadyPosted:false};
+  }catch(error){
+    restoreApPostingState(snapshot);
+    console.error(JSON.stringify({event:'AP_POST_ROLLBACK',billId,stage:'commit',error:error.message,code:error.code||'INTERNAL_ERROR'}));
+    throw error;
+  }
 }
 
 
@@ -999,7 +1103,7 @@ function confirmShipment(sh){ if(sh.status==='Confirmed'&&sh.jeNumber) return sh
  if(jeLines.length) sh.jeNumber=createPostedJournal({module:'Inventory',description:`Shipment release ${sh.id}`,postPeriod:periodFromDate(sh.shipDate),transactionDate:sh.shipDate,sourceRef:sh.id,lines:jeLines,createdBy:'admin'}); sh.status='Confirmed'; const order=salesOrders.find(o=>o.id===sh.salesOrderId); const old=order.status; for(const l of lines){ const sol=salesOrderLines.find(x=>x.id===l.salesOrderLineId); const item=itemMaster.find(i=>i.code===l.itemId); if(sol&&Number(sol.qtyShipped)<Number(l.shippedQty)){ const delta=Number(l.shippedQty)-Number(sol.qtyShipped||0); sol.qtyShipped=Number(l.shippedQty); sol.qtyAllocated=Math.max(0,Number(sol.qtyAllocated||0)-delta); if(isStockItem(item)){ adjustInventoryBalance({itemId:item.code,warehouse:l.warehouse||sol.warehouse||item.defaultWarehouse||'MAIN',location:l.location||item.defaultLocation||'MAIN-A1',qtyOut:delta,allocatedDelta:-delta,onSoDelta:-delta}); createInvAudit({transactionType:'Shipment',referenceNumber:sh.id,sourceModule:'Sales Order',sourceReference:sh.salesOrderId,itemId:item.code,warehouse:l.warehouse||sol.warehouse||item.defaultWarehouse||'MAIN',location:l.location||item.defaultLocation||'MAIN-A1',quantityOut:delta,unitCost:itemCost(item),postDate:sh.shipDate,postPeriod:periodFromDate(sh.shipDate),jeReference:sh.jeNumber}); } } } setSoStatusFromQty(order); addSoHistory(order.id,old,order.status,'Confirm Shipment',`${sh.id} confirmed.`); return sh; }
 function prepareSoInvoice(orderId,payload={}){ const order=salesOrders.find(o=>o.id===orderId||o.orderNumber===orderId); if(!order) throw new Error('Sales order not found'); if(order.status==='Credit Hold') throw new Error('Credit-hold orders cannot be invoiced'); const shipmentId=payload.shipmentId; const lines=salesOrderLines.filter(l=>l.salesOrderId===order.id).map(l=>{ const item=itemMaster.find(i=>i.code===l.itemId)||{}; const max=(item.type==='Service'||item.type==='Service Item'||item.invoiceWithoutShipment)?Number(l.qtyOrdered||0):Number(l.qtyShipped||0); const qty=Math.max(0,max-Number(l.qtyInvoiced||0)); return {source:l,qty,item}; }).filter(x=>x.qty>0); if(!lines.length) throw new Error('Invoiceable quantity must exist'); const invId=payload.invoiceNumber||`INV-SO-${order.orderNumber.replace(/^SO-/,'')}`; if(arDocuments.some(d=>d.id===invId)) throw new Error('Invoice already exists'); const invLines=lines.map(({source,qty,item})=>{ const ext=qty*Number(source.unitPrice||0); source.qtyInvoiced+=qty; return {itemCode:source.itemId,item:source.itemId,description:source.description,qty,unitPrice:source.unitPrice,lineTotal:ext,taxCategory:source.taxCategory||item.taxCategory||'TAXABLE',revenueAccount:source.revenueAccount||item.revenueAccount||POSTING_ACCOUNTS.defaultSalesRevenue,sourceSalesOrderLineId:source.id}; }); const amount=invLines.reduce((s,l)=>s+Number(l.lineTotal||0),0); const inv={id:invId,type:'Invoice',customerId:order.customerId,customerName:order.customerName,date:payload.date||new Date().toISOString().slice(0,10),postDate:payload.postDate||payload.date||new Date().toISOString().slice(0,10),postPeriod:periodFromDate(payload.postDate||payload.date||new Date().toISOString().slice(0,10)),dueDate:order.dueDate,terms:order.terms,status:'Saved',posted:false,createdDate:new Date().toISOString().slice(0,10),amount,balance:amount,lines:invLines,taxZone:order.taxZone,shipToAddress:order.shipToAddress||customers.find(c=>c.id===order.customerId)?.shippingAddress||'',sourceSalesOrderId:order.id,sourceSalesOrderNumber:order.orderNumber,sourceShipmentId:shipmentId||'',customerPO:order.customerPO,salesOrderReference:order.orderNumber,shipmentNumber:shipmentId||'',applications:[]}; applyTaxToArDocument(inv, customers.find(c=>c.id===inv.customerId)); arDocuments.push(inv); const rel={id:`SOI-${String(salesOrderInvoices.length+1001).padStart(4,'0')}`,salesOrderId:order.id,salesOrderNumber:order.orderNumber,shipmentId:shipmentId||'',invoiceId:inv.id,invoiceNumber:inv.id,invoiceDate:inv.date,invoiceAmount:inv.amount,openBalance:inv.balance,status:inv.status,arReference:inv.id}; salesOrderInvoices.push(rel); const appliedDeposits=[]; rel.openBalance=inv.balance; const old=order.status; recalcSo(order); setSoStatusFromQty(order); if(Number(inv.balance||0)===0) inv.status='Closed'; addSoHistory(order.id,old,order.status,'Prepare Invoice',`${inv.id} prepared from sales order${appliedDeposits.length?' and deposits applied.':'.'}`); return {invoice:inv,salesOrder:serializeSo(order),appliedDeposits}; }
 
-async function serve(p,res){ if(p==='/app.js'||p==='/styles.css'){const c=await readFile(path.join(publicDir,p.slice(1)));res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css':'application/javascript'});res.end(c);return true;} if(!p.startsWith('/api')){const c=await readFile(path.join(publicDir,'index.html'));res.writeHead(200,{'Content-Type':'text/html'});res.end(c);return true;} return false; }
+async function serve(p,res){ if(['/app.js','/styles.css','/responsive.css'].includes(p)){const c=await readFile(path.join(publicDir,p.slice(1)));res.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css':'application/javascript'});res.end(c);return true;} if(!p.startsWith('/api')){const c=await readFile(path.join(publicDir,'index.html'));res.writeHead(200,{'Content-Type':'text/html'});res.end(c);return true;} return false; }
 
 const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req.url,true); const method=req.method||'GET'; req.requestId=crypto.randomUUID();res.setHeader('X-Request-ID',req.requestId);securityHeaders(req,res);try{
  if(process.env.NODE_ENV==='production'&&req.socket.remoteAddress!=='127.0.0.1'&&req.socket.remoteAddress!=='::1'&&!req.socket.encrypted) throw new SecurityError(400,'HTTPS is required','HTTPS_REQUIRED');
@@ -1105,10 +1209,23 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='POST'&&pathname==='/api/ap/documents'){ const b=await body(req); if((b.type||'Bill')==='Bill'){const totals=calculateApBillTotals(b.lines||[],{taxTotal:b.taxTotal,freight:b.freight});b.lines=totals.lines;b.subtotal=totals.subtotal;b.discountTotal=totals.discountTotal;b.amount=totals.invoiceTotal;b.balance=totals.invoiceTotal;} if(Number(b.amount)<=0) return json(res,400,{error:['Payment','Prepayment'].includes(b.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.'}); validateApBillReferences({type:b.type||'Bill',...b}); const vendor=vendors.find(v=>v.id===b.vendorId&&v.status==='Active'); if(!vendor) return json(res,400,{error:'A valid active vendor is required'}); validateApBillAmount(b); const prefix=b.type==='Payment'?'PAY-AP':b.type==='Prepayment'?'PREPAY':b.type==='Debit Adjustment'?'DADJ':'BILL'; const pp=periodFromDate(b.postDate||b.date); validatePeriodOpenForSave('AP',pp); const id=`${prefix}-${String(apDocuments.length+1001).padStart(4,'0')}`; const d={id,type:b.type||'Bill',vendorId:vendor.id,vendorName:vendor.name,approverUserId:transactionApproverId({overrideUserId:b.approverUserId,vendor:{...vendor,approverUserId:vendor.approverUserId||currentUser(req).id}}),date:b.date||new Date().toISOString().slice(0,10),postDate:b.postDate||b.date||new Date().toISOString().slice(0,10),postPeriod:pp,dueDate:b.dueDate||b.date,terms:b.terms||vendor.terms,status:b.status||'Saved',approvalStatus:NOT_SUBMITTED,billApprovalStatus:NOT_SUBMITTED,posted:false,hold:!!b.hold,amount:Number(b.amount||0),balance:Number((b.balance??b.amount)||0),subtotal:Number(b.subtotal||0),discountTotal:Number(b.discountTotal||0),taxTotal:Number(b.taxTotal||0),freight:Number(b.freight||0),method:b.method,checkNumber:b.checkNumber,paymentRef:b.paymentRef||'',vendorRef:b.vendorRef||b.invoiceNumber||'',invoiceNumber:b.invoiceNumber||b.vendorRef||'',invoicePdfAttached:false,attachmentName:'',attachments:[],branch:b.branch||'MAIN',department:b.department||'Finance',createdBy:b.createdBy||'ap.clerk',cashAccount:String(b.cashAccount||POSTING_ACCOUNTS.apCash).trim().split(/\s+/)[0],currency:b.currency||'USD',description:b.description||'',unappliedBalance:Number(b.amount||0),appliedAmount:0,applications:b.applications||[],history:b.history||[],approvals:b.approvals||[],lines:b.lines||[],source:'Manual'}; if(d.type==='Bill'){const purchaseOrder=purchaseOrders.find(po=>po.poNumber===(d.lines||[]).find(line=>line.poNumber)?.poNumber),receipts=purchaseReceipts.filter(receipt=>receipt.poId===purchaseOrder?.id),evaluation=evaluateApInvoice({vendor,invoice:d,lines:d.lines,purchaseOrder,receipts,rules:apInvoiceDecisionRules,duplicateResults:duplicateBills(d)});Object.assign(d,{invoiceClassification:evaluation.classification,classificationSource:b.classificationSource||'System Rule',classificationConfidence:evaluation.classificationConfidence,classificationRuleId:evaluation.approvalRuleId,classificationReason:evaluation.reasons.join(' '),classificationChangedBy:b.classificationChangedBy||'',classificationChangedAt:b.classificationChangedAt||'',classificationOverrideReason:b.classificationOverrideReason||'',approvalRequirement:evaluation.approvalRequirement,approvalDecisionSource:evaluation.approvalDecisionSource,approvalRuleId:evaluation.approvalRuleId,approvalDecisionReason:evaluation.reasons,approvalDecisionDate:new Date().toISOString(),approvalDecisionBy:'system',matchType:evaluation.matchType,matchScore:evaluation.matchScore,matchComponents:evaluation.matchComponents,variances:evaluation.variances,evaluationHistory:[{date:new Date().toISOString(),action:'Approval decision evaluated',result:evaluation}]});}d.approvalRequired=d.approvalRequirement!=='Auto Approved'&&apApprovalRequired(d); syncApPaymentReview(d); if(d.type==='Prepayment'){ d.status='Pending Approval'; d.approvalStatus='Pending Payment Approval'; } applyApSaveWorkflow(d,b.createdBy||'ap.clerk'); apDocuments.push(d); if(d.type==='Bill')addWorkflowAudit({billId:d.id,action:'Bill Created',userId:currentUser(req).id,fromStatus:'',toStatus:d.status,comments:'AP Bill created and saved'}); return json(res,201,serializeApDoc(d)); }
  if(method==='PUT'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); if(d.posted||['Open','Closed','Voided'].includes(d.status)) return json(res,400,{error:'Posted documents cannot be edited. Void or reverse the document instead.'}); const before=JSON.parse(JSON.stringify(d)); const b=await body(req); if(b.approverUserId!==undefined&&b.approverUserId!==d.approverUserId){const approver=approvalUser(b.approverUserId);if(!approver||approver.status!=='Active')return json(res,400,{error:'Select an active ERP user as AP approver'});} if(d.type==='Bill'){const totals=calculateApBillTotals(b.lines||d.lines||[],{taxTotal:b.taxTotal??d.taxTotal,freight:b.freight??d.freight});b.lines=totals.lines;b.subtotal=totals.subtotal;b.discountTotal=totals.discountTotal;b.amount=totals.invoiceTotal;b.balance=d.posted?d.balance:totals.invoiceTotal;} if(b.vendorId&&!vendors.some(v=>v.id===b.vendorId&&v.status==='Active')) return json(res,400,{error:'A valid active vendor is required'}); if(b.amount!==undefined&&Number(b.amount)<=0) return json(res,400,{error:['Payment','Prepayment'].includes(d.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.'}); validateApBillReferences({...d,...b}); delete b.postPeriod; delete b.posted; delete b.status; const nextPostDate=b.postDate||b.date||d.postDate||d.date; validatePeriodOpenForSave('AP',periodFromDate(nextPostDate)); validateApBillAmount({...d,...b}); Object.assign(d,b);if(d.type==='Bill'){const selectedVendor=vendors.find(v=>v.id===d.vendorId)||{},purchaseOrder=purchaseOrders.find(po=>po.poNumber===(d.lines||[]).find(line=>line.poNumber)?.poNumber),receipts=purchaseReceipts.filter(receipt=>receipt.poId===purchaseOrder?.id),evaluation=evaluateApInvoice({vendor:selectedVendor,invoice:d,lines:d.lines,purchaseOrder,receipts,rules:apInvoiceDecisionRules,duplicateResults:duplicateBills(d)}),changed=before.invoiceClassification&&before.invoiceClassification!==evaluation.classification;d.invoiceClassification=evaluation.classification;d.classificationSource=b.invoiceClassification?'User Selection':'System Rule';d.classificationConfidence=evaluation.classificationConfidence;d.classificationRuleId=evaluation.approvalRuleId;d.classificationReason=evaluation.reasons.join(' ');d.approvalRequirement=evaluation.approvalRequirement;d.approvalDecisionSource=evaluation.approvalDecisionSource;d.approvalRuleId=evaluation.approvalRuleId;d.approvalDecisionReason=evaluation.reasons;d.approvalDecisionDate=new Date().toISOString();d.approvalDecisionBy='system';d.matchType=evaluation.matchType;d.matchScore=evaluation.matchScore;d.matchComponents=evaluation.matchComponents;d.variances=evaluation.variances;d.evaluationHistory=[...(d.evaluationHistory||[]),{date:new Date().toISOString(),action:changed?'Classification changed and decision re-evaluated':'Approval decision evaluated',result:evaluation,overrideReason:b.classificationOverrideReason||''}];} d.invoiceNumber=d.invoiceNumber||d.vendorRef; d.invoicePdfAttached=!!(d.invoicePdfAttached||d.attachmentName||billHasPdf(d)); d.postPeriod=periodFromDate(d.postDate||d.date); if(['Rejected','Information Requested','Draft'].includes(before.status)) d.status='Saved'; d.approvalRequired=d.approvalRequirement!=='Auto Approved'&&apApprovalRequired(d); syncApPaymentReview(d); resetApprovalIfMaterialChange(d,before,currentUser(req).id); applyApSaveWorkflow(d,currentUser(req).id); if(d.type==='Bill')addWorkflowAudit({billId:d.id,action:'Bill Edited',userId:currentUser(req).id,fromStatus:before.status,toStatus:d.status,comments:'AP Bill changes saved'}); return json(res,200,serializeApDoc(d)); }
  if(method==='DELETE'&&pathname.startsWith('/api/ap/documents/')){ const id=pathname.split('/').pop(); const i=apDocuments.findIndex(x=>x.id===id); if(i<0) return json(res,404,{error:'Not found'}); if(!['Saved','Rejected','Draft'].includes(apDocuments[i].status)) return json(res,400,{error:'Only Draft, Saved, or Rejected documents can be deleted'}); apDocuments.splice(i,1); return json(res,200,{ok:true}); }
- if(method==='POST'&&pathname==='/api/ap/documents/post'){ const {id,duplicateOverrideReason=''}=await body(req); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const pp=d.postPeriod||periodFromDate(d.postDate||d.date); validateSourceAndGlOpen('AP',pp); if(d.hold) return json(res,400,{error:'Document is on hold and cannot be released'}); if(Number(d.amount)<=0) return json(res,400,{error:['Payment','Prepayment'].includes(d.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.'}); validateApBillAmount(d); if(d.type==='Bill'){ assertBillPostable(d); const dupes=duplicateBills(d); if(dupes.length&&!duplicateOverrideReason) return json(res,400,{error:`Potential duplicate invoice found: ${dupes.map(x=>x.id).join(', ')}. Review duplicate bill before posting.`}); } else if(d.type==='Prepayment'){ if(d.status!=='Approved'||d.paymentApprovalStatus!=='Approved For Payment') return json(res,400,{error:'Vendor prepayment must be approved before posting.'}); } else if(d.status!=='Saved') return json(res,400,{error:'Only Saved transactions can be posted'}); if(['Payment','Prepayment'].includes(d.type)){ syncApPaymentReview(d); const payStatus=d.paymentApprovalStatus||'Not Required'; if(payStatus==='Pending Payment Approval') return json(res,400,{error:'Payment batch requires payment approval before posting.'}); releaseApPaymentApplications(d,d.postDate||d.date); } const old=d.status; if(d.type==='Bill') processApBillPoMatches(d); postApJE(d,false); d.posted=true; d.status=(Number(d.balance||d.unappliedBalance||0)===0)?'Closed':'Open'; addWorkflowAudit({billId:d.id,action:'Post',userId:'admin',fromStatus:old,toStatus:d.status,comments:'Posted to AP and GL'}); return json(res,200,serializeApDoc(d)); }
+ if(method==='POST'&&pathname==='/api/ap/documents/post'){
+  const {id,duplicateOverrideReason=''}=await body(req),d=apDocuments.find(x=>x.id===id); if(!d)return json(res,404,{error:'Not found'});
+  const result=postApDocumentSafely(d,{duplicateOverrideReason,userId:currentUser(req).id});
+  return json(res,200,{...serializeApDoc(result.document),alreadyPosted:result.alreadyPosted});
+ }
  if(method==='POST'&&pathname==='/api/ap/documents/void'){ const {id,reversalDate}=await body(req); const d=apDocuments.find(x=>x.id===id); if(!d) return json(res,404,{error:'Not found'}); const appliedOn=reversalDate||new Date().toISOString().slice(0,10); validateReversalSourceAndGlOpen('AP',periodFromDate(appliedOn)); if(!['Open','Closed'].includes(d.status)) return json(res,400,{error:'Only Open/Closed can be voided'}); const revJe=postApJE({...d,postDate:appliedOn,postPeriod:periodFromDate(appliedOn)},true); if(d.type==='Payment'){ for(const app of d.applications||[]){ const b=apDocuments.find(x=>x.id===(app.billId||app.documentId)); if(b&&b.status!=='Voided'){ b.balance=Number(b.balance||0)+Number(app.amount||0); b.status='Open'; }} d.history=d.history||[]; (d.applications||[]).forEach(a=>d.history.push({reference:`REV-${d.id}`,appliedDocument:a.billId||a.documentId,amount:-Number(a.amount||0),date:appliedOn,reversalEntry:revJe,user:'system'})); } const old=d.status; d.status='Voided'; addWorkflowAudit({billId:d.id,action:'Voided',userId:currentUser(req).id,fromStatus:old,toStatus:'Voided',comments:`Reversal journal ${revJe}`}); return json(res,200,{document:d,reversalJournalEntry:revJe}); }
  if(method==='POST'&&pathname==='/api/ap/payments/apply'){ const {paymentId,applications=[],applicationDate}=await body(req); const appliedOn=applicationDate||new Date().toISOString().slice(0,10); const p=apDocuments.find(x=>x.id===paymentId&&x.type==='Payment'); if(!p) return json(res,404,{error:'Payment not found'}); if(!p.posted||!['Open','Closed'].includes(p.status)) return json(res,400,{error:'Only posted payments can be applied'}); if(Number(p.amount)<=0) return json(res,400,{error:'Payment amount must be greater than $0.00.'}); validatePeriodOpen('AP',periodFromDate(applicationDate||p.postDate||p.date)); let rem=Number(p.unappliedBalance??p.amount??0); const valid=[]; for(const a of applications){const d=apDocuments.find(x=>x.id===a.documentId&&['Bill','Credit Adjustment','Debit Adjustment'].includes(x.type)&&x.vendorId===p.vendorId);if(!d?.posted||d.status!=='Open')return json(res,400,{error:'This document has not been posted and cannot be applied.'});const amount=Number(a.amount||0);if(amount<=0)return json(res,400,{error:'Applied amount must be greater than zero'});if(amount>rem||amount>Number(d.balance||0))return json(res,400,{error:`Applied amount exceeds available balance for ${d.id}`});valid.push({document:d,amount});rem-=amount;} p.applications=[];p.history=p.history||[];for(const app of valid){const d=app.document;d.balance-=app.amount;d.status=d.balance===0?'Closed':'Open';p.applications.push({billId:d.id,documentId:d.id,amount:app.amount,date:appliedOn,status:'Applied'});p.history.push({reference:`APP-${String(applicationSeq++).padStart(6,'0')}`,appliedDocument:d.id,paymentReference:p.id,date:appliedOn,amount:app.amount,reversalEntry:'',user:'system'});}p.appliedAmount=Number(p.amount)-rem;p.unappliedBalance=rem;p.status=rem===0?'Closed':'Open';return json(res,200,p); }
- if(method==='POST'&&pathname==='/api/ap/release/post-selected'){ const {ids=[]}=await body(req); const docs=ids.map(id=>apDocuments.find(x=>x.id===id)).filter(Boolean); let posted=0; for(const d of docs){if(d.posted)continue;if(d.type==='Bill')assertBillPostable(d);if(d.type!=='Bill'&&d.status!=='Saved')throw new Error(`${d.id} is not ready to post`);if(Number(d.amount)<=0)throw new Error(['Payment','Prepayment'].includes(d.type)?'Payment amount must be greater than $0.00.':'Transaction amount must be greater than $0.00.');validateSourceAndGlOpen('AP',d.postPeriod||periodFromDate(d.postDate||d.date));validateApBillAmount(d);if(d.type==='Payment')releaseApPaymentApplications(d,d.postDate||d.date);if(d.type==='Bill')processApBillPoMatches(d);postApJE(d,false);d.posted=true;d.status=Number(d.balance||d.unappliedBalance||0)===0?'Closed':'Open';posted++;}return json(res,200,{posted}); }
+ if(method==='POST'&&pathname==='/api/ap/release/post-selected'){
+  const {ids=[],duplicateOverrideReason=''}=await body(req),results=[];
+  for(const id of [...new Set(ids)]){
+    const d=apDocuments.find(x=>x.id===id);
+    if(!d){results.push({id,success:false,error:'Document not found'});continue;}
+    try{const result=postApDocumentSafely(d,{duplicateOverrideReason,userId:currentUser(req).id});results.push({id,success:true,status:result.document.status,journalEntryNumber:result.document.journalEntryNumber||'',alreadyPosted:result.alreadyPosted});}
+    catch(error){results.push({id,success:false,error:error.message,code:error.code||'AP_POSTING_ERROR'});}
+  }
+  const posted=results.filter(row=>row.success).length,failed=results.length-posted; return json(res,200,{posted,failed,results});
+ }
  if(method==='GET'&&pathname==='/api/ap/reports/aging'){ const asOf=new Date(query.date||new Date().toISOString().slice(0,10)); const rows=[]; vendors.forEach(v=>{const open=apDocuments.filter(d=>d.vendorId===v.id&&d.type==='Bill'&&d.posted&&d.status==='Open'&&Number(d.balance||0)>0); if(!open.length) return; const r={vendorId:v.id,vendorName:v.name,current:0,b1_30:0,b31_60:0,b61_90:0,b90p:0}; open.forEach(b=>{const days=Math.floor((asOf-new Date(b.dueDate||b.date))/86400000); const bal=Number(b.balance||0); if(days<=0) r.current+=bal; else if(days<=30) r.b1_30+=bal; else if(days<=60) r.b31_60+=bal; else if(days<=90) r.b61_90+=bal; else r.b90p+=bal;}); rows.push(r); }); return json(res,200,rows); }
 
 

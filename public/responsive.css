@@ -1,0 +1,80 @@
+/* Responsive shell overrides: keep the ERP inside the browser viewport while allowing wide accounting grids to scroll locally. */
+html,body{width:100%;max-width:100%;overflow-x:hidden}
+#app,.main,.content,#view,.erp-workspace,.panel,.tab-pane,.grid4,.finance-grid,.ap-pay-grid,.pay-head3,.so-header,.period-screen,.payment-layout{min-width:0;max-width:100%}
+#app{width:100%;max-width:100vw}
+.main{width:100%;max-width:100vw;grid-template-columns:240px minmax(0,1fr)}
+.sidebar{min-width:0;max-width:100%;overflow-x:hidden}
+.content{min-width:0;max-width:100%;overflow-x:hidden}
+#view>*{max-width:100%;min-width:0}
+input,select,textarea{max-width:100%;min-width:0}
+.header-row,.erp-toolbar,.grid-tools,.cn-filters,.cn-foot,.so-toolbar{flex-wrap:wrap;gap:6px}
+.header-row>*{min-width:0}
+.erp-tabs{max-width:100%;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+.erp-tabs .tab{flex:0 0 auto;white-space:nowrap}
+.erp-header-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+.ap-pay-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.grid4,.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.pay-head3,.so-header{grid-template-columns:repeat(3,minmax(0,1fr))}
+.table-wrap,.grid-wrap,.ap-bill-lines-scroll,.po-subgrid,#docsGrid,#histGrid{display:block;min-width:0;max-width:100%;overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch}
+.table-wrap table,.grid-wrap table,.ap-bill-lines-scroll table,.po-subgrid table,#docsGrid table,#histGrid table{max-width:none}
+.cn-overlay{padding:12px}
+.cn-modal,.erp-dialog{width:min(980px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto}
+.erp-lookup-panel{max-width:calc(100vw - 16px)}
+
+/* AP Incoming Documents: keep both the list and split invoice-review workspace inside the available content area. */
+#incomingReview,.incoming-review-screen,.incoming-split,.incoming-pdf-panel,.incoming-form-panel,#invoiceReviewForm,#validationPanel,#processingStatus{min-width:0;max-width:100%}
+.incoming-review-screen{width:100%;overflow:hidden}
+.incoming-split{width:100%;max-width:100%;min-width:0;overflow:hidden}
+.incoming-pdf-panel,.incoming-form-panel{min-width:0;max-width:100%}
+.incoming-form-panel{overflow-x:hidden}
+.incoming-form-panel .panel{min-width:0;max-width:100%;overflow-x:auto}
+.incoming-review-screen .erp-header-grid{grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}
+.review-toolbar,.pdf-toolbar{max-width:100%;min-width:0;flex-wrap:wrap}
+.review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{flex:0 0 auto}
+.pdf-holder,.pdf-frame{max-width:100%;min-width:0}
+#invoiceReviewForm>table,#incomingReview table{min-width:900px;max-width:none}
+#incomingReview>.panel{min-width:0;max-width:100%;overflow-x:auto}
+#incomingDocsGrid{font-size:12px;min-width:1250px;max-width:none}
+#incomingDocsGrid th,#incomingDocsGrid td{padding:5px 6px;white-space:nowrap}
+#incomingDocsGrid input,#incomingDocsGrid select{min-width:0}
+
+@media (max-width:1500px){
+  .erp-header-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+
+@media (max-width:1200px){
+  .main{grid-template-columns:210px minmax(0,1fr)}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .grid4,.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .content{padding:12px}
+  .incoming-split{flex-direction:column}
+  .incoming-pdf-panel,.incoming-form-panel{flex:1 1 auto;width:100%;max-width:100%}
+  .split-divider{display:none}
+  .incoming-form-panel .panel{margin-left:0}
+  .pdf-holder,.pdf-frame{min-height:48vh}
+}
+
+@media (max-width:900px){
+  #app{grid-template-rows:auto 1fr}
+  .topnav{min-height:56px;height:auto;max-width:100vw;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  .topnav a{flex:0 0 auto;white-space:nowrap}
+  .main{grid-template-columns:180px minmax(0,1fr)}
+  .sidebar{padding:10px}
+  .content{padding:10px}
+  .grid4,.finance-grid{grid-template-columns:1fr}
+  .incoming-review-screen .erp-header-grid{grid-template-columns:1fr}
+  #incomingDocsGrid{min-width:1100px}
+}
+
+@media (max-width:720px){
+  .main{display:block;width:100%}
+  .sidebar{width:100%;border-right:0;border-bottom:1px solid var(--border);max-height:32vh;overflow:auto}
+  .content{width:100%;padding:10px}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.grid4,.finance-grid{grid-template-columns:1fr}
+  .header-row{align-items:flex-start}
+  .erp-toolbar{position:static}
+  .review-toolbar,.pdf-toolbar{align-items:stretch}
+  .review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{max-width:100%}
+  .pdf-toolbar a button{width:100%}
+  #invoiceReviewForm>table,#incomingReview table{min-width:760px}
+}
