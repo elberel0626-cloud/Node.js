@@ -59,23 +59,33 @@ test('wide AP bill lines scroll inside their own grid instead of widening the pa
   expect(result.wrapperScrollWidth).toBeGreaterThanOrEqual(result.wrapperClientWidth);
 });
 
-test('incoming documents list stays inside the viewport and scrolls only inside its grid', async ({ page }) => {
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await openView(page, '/ap/incoming-documents', '#incomingDocsGrid');
-  const result = await page.evaluate(() => {
-    const table = document.querySelector('#incomingDocsGrid');
-    const wrapper = table?.closest('.grid-wrap') || table?.parentElement;
-    return {
-      rootScrollWidth: document.documentElement.scrollWidth,
-      rootClientWidth: document.documentElement.clientWidth,
-      wrapperExists: Boolean(wrapper),
-      wrapperScrollWidth: wrapper?.scrollWidth || 0,
-      wrapperClientWidth: wrapper?.clientWidth || 0,
-      overflowX: wrapper ? getComputedStyle(wrapper).overflowX : ''
-    };
-  });
-  expect(result.rootScrollWidth).toBeLessThanOrEqual(result.rootClientWidth + 2);
-  expect(result.wrapperExists).toBe(true);
-  expect(['auto', 'scroll']).toContain(result.overflowX);
-  expect(result.wrapperScrollWidth).toBeGreaterThanOrEqual(result.wrapperClientWidth);
+test('incoming documents list auto-fits its available window instead of becoming a separate horizontal-scroll canvas', async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 1366, height: 768 }, { width: 1600, height: 900 }]) {
+    await page.setViewportSize(viewport);
+    await openView(page, '/ap/incoming-documents', '#incomingDocsGrid');
+    const result = await page.evaluate(() => {
+      const table = document.querySelector('#incomingDocsGrid');
+      const wrapper = table?.closest('.grid-wrap') || table?.parentElement;
+      const tableRect = table?.getBoundingClientRect();
+      const wrapperRect = wrapper?.getBoundingClientRect();
+      return {
+        rootScrollWidth: document.documentElement.scrollWidth,
+        rootClientWidth: document.documentElement.clientWidth,
+        wrapperExists: Boolean(wrapper),
+        tableWidth: tableRect?.width || 0,
+        wrapperWidth: wrapperRect?.width || 0,
+        tableScrollWidth: table?.scrollWidth || 0,
+        tableClientWidth: table?.clientWidth || 0,
+        wrapperScrollWidth: wrapper?.scrollWidth || 0,
+        wrapperClientWidth: wrapper?.clientWidth || 0,
+        tableLayout: table ? getComputedStyle(table).tableLayout : ''
+      };
+    });
+    expect(result.rootScrollWidth).toBeLessThanOrEqual(result.rootClientWidth + 2);
+    expect(result.wrapperExists).toBe(true);
+    expect(result.tableLayout).toBe('fixed');
+    expect(result.tableWidth).toBeLessThanOrEqual(result.wrapperWidth + 2);
+    expect(result.tableScrollWidth).toBeLessThanOrEqual(result.tableClientWidth + 2);
+    expect(result.wrapperScrollWidth).toBeLessThanOrEqual(result.wrapperClientWidth + 2);
+  }
 });
