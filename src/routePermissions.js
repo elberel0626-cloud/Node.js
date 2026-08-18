@@ -30,7 +30,6 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['POST','PUT','PATCH','DELETE'],/^\/api\/finance\/journal-transactions(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
   [['GET','POST'],/^\/api\/finance\/reclassify\/(?:search|process)$/,'GL_RECLASSIFY'],
   [['POST'],/^\/api\/finance\/financial-periods\/(?:action|blockers)$/,'FINANCIAL_PERIOD_CLOSE'],
-  [['GET','POST','PUT'],/^\/api\/finance\/year-end(?:-history|\/.*)?$/,'FINANCIAL_PERIOD_CLOSE'],
   [['GET'],/^\/api\/tax\/(?:rates|zones|categories|jurisdictions|exemptions|history|remittances|providers)(?:\/.*)?$/,'GL_JOURNAL_CREATE'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/tax\/(?:rates|zones|categories|remittances|calculate|import-rates)(?:\/.*)?$/,'SYSTEM_CONFIGURATION_ADMIN'],
   [['GET'],/^\/api\/finance\/email-settings(?:\/test)?$/,'GL_JOURNAL_CREATE'],
