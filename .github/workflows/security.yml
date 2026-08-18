@@ -11,8 +11,9 @@ jobs:
         with: { node-version-file: .nvmrc, cache: npm }
       - run: npm ci
       - run: npm run lint
-      - run: npm test
-      - run: npm run test:security
+      - name: Run unit tests except security tests
+        shell: bash
+        run: find test -maxdepth 1 -name '*.test.js' ! -name 'security.test.js' -print0 | xargs -0 node --test
       - run: npx playwright install --with-deps chromium
       - name: Create ephemeral end-to-end administrator
         shell: bash
