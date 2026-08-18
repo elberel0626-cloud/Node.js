@@ -5,6 +5,8 @@ node_modules/
 data/security/
 data/ap-incoming-documents/
 data/ap-bill-attachments/
+data/chart-of-accounts.json
+data/test-chart-of-accounts.json
 *.log
 *.sqlite*
 *.db
