@@ -16,7 +16,7 @@ def replace_once(text, old, new, label):
 
 
 def regex_once(text, pattern, replacement, label):
-    out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+    out, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)
     if count != 1:
         raise SystemExit(f'{label}: expected exactly one regex match, found {count}')
     return out
