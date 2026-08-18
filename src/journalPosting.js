@@ -1,7 +1,7 @@
 export const JOURNAL_ROUNDING_TOLERANCE = 0.01;
 
 export function isManualJournal(je) {
-  return je?.module === 'GL' && !je.reversalOf && !je.reclassOf && (!je.sourceRef || je.sourceRef === je.jeNumber);
+  return je?.module === 'GL' && !je.reclassOf && (je.generatedFromReversingJournal || (!je.reversalOf && (!je.sourceRef || je.sourceRef === je.jeNumber)));
 }
 
 export function journalTotals(je) {

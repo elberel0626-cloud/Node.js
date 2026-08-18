@@ -8,6 +8,7 @@ async function createJournal(page, description, amount = 40) {
 }
 
 test('saved journals can be selected, bulk posted, linked, and posted exactly once', async ({ page }) => {
+  const pageErrors=[],consoleErrors=[],requestFailures=[];page.on('pageerror',error=>pageErrors.push(error.message));page.on('console',message=>{if(message.type()==='error')consoleErrors.push(message.text());});page.on('requestfailed',request=>requestFailures.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText}`));
   await openView(page, '/finance/journal', '#jeGrid');
   const first = await createJournal(page, 'Bulk posting test A', 41);
   const second = await createJournal(page, 'Bulk posting test B', 42);
@@ -17,7 +18,7 @@ test('saved journals can be selected, bulk posted, linked, and posted exactly on
   await expect(firstRow).toContainText('Ready to post');await expect(secondRow).toContainText('Ready to post');
   await expect(firstRow.locator(`a[href='/finance/journal/${first.jeNumber}']`)).toHaveCount(1);
   await firstRow.locator('.grid-row').check();await expect(page.locator('#journalPostSelected')).toBeEnabled();
-  page.once('dialog', dialog => dialog.accept());await page.locator('#journalPostSelected').click();
+  const postRequest=page.waitForRequest(request=>request.url().endsWith('/api/finance/journal-transactions/post-selected')&&request.method()==='POST');await page.locator('#journalPostSelected').click();await expect(page.locator('.erp-dialog')).toContainText('1 journal entry');await page.locator('#erpConfirmOk').click();await postRequest;
   await expect(page.locator('#journalPostResults')).toContainText('1 posted; 0 failed');
   await expect(page.locator('#journalPostGrid tbody tr').filter({ hasText: first.jeNumber })).toHaveCount(0);
   await expect(page.locator('#journalPostGrid tbody tr').filter({ hasText: second.jeNumber })).toHaveCount(1);
@@ -29,10 +30,11 @@ test('saved journals can be selected, bulk posted, linked, and posted exactly on
   await openView(page, '/finance/processes/post-journals', '#journalPostGrid');
   await page.locator('#journalPostGrid tbody tr').filter({ hasText: second.jeNumber }).locator('.grid-row').check();
   await page.locator('#journalPostGrid tbody tr').filter({ hasText: third.jeNumber }).locator('.grid-row').check();
-  page.once('dialog', dialog => dialog.accept());await page.locator('#journalPostSelected').click();
+  await page.locator('#journalPostSelected').click();await page.locator('#erpConfirmOk').click();
   await expect(page.locator('#journalPostResults')).toContainText('2 posted; 0 failed');
   await expect(page.locator('#journalPostGrid tbody tr').filter({ hasText: second.jeNumber })).toHaveCount(0);
   await expect(page.locator('#journalPostGrid tbody tr').filter({ hasText: third.jeNumber })).toHaveCount(0);
+  expect(pageErrors).toEqual([]);expect(requestFailures).toEqual([]);expect(consoleErrors.filter(message=>/post-selected|uncaught|journalPostSelected/i.test(message))).toEqual([]);
 });
 
 test('valid and invalid journals are isolated in one bulk request', async ({ page }) => {
