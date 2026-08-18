@@ -32,6 +32,10 @@ label{min-width:0}
 
 /* Fluid form/header grids: the browser decides how many columns fit. */
 .erp-workspace,.panel,.tab-pane,.card,.period-screen,.payment-layout,.po-detail,.so-screen{width:100%;max-width:100%;min-width:0}
+/* Keep authentication compact even though application cards are fluid. */
+#login-screen{padding:20px}
+#login-form{width:min(360px,100%);max-width:360px;min-width:0}
+#login-form input,#login-form button{width:100%}
 .erp-workspace{padding:8px}
 .panel,.tab-pane{border-radius:4px;padding:9px}
 .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr))!important;gap:7px 10px!important;width:100%;max-width:100%;min-width:0}
@@ -51,6 +55,8 @@ label{min-width:0}
 #view table th{font-size:var(--erp-grid-head-font,10.5px);font-weight:600;white-space:normal;overflow-wrap:anywhere;word-break:normal;vertical-align:bottom}
 #view table td[data-k*='description' i],#view table td[data-k*='name' i],#view table td[data-k*='vendor' i],#view table td[data-k*='customer' i],#view table td[data-k*='filename' i],#view table td.erp-wrap-cell{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 #view table input,#view table select,#view table textarea{width:100%!important;max-width:100%!important;min-width:0!important;height:24px;padding:2px 3px;font-size:inherit}
+/* Checkboxes are compact controls, not fluid table editors. */
+#view table input[type='checkbox'],input[type='checkbox']{width:15px!important;max-width:15px!important;min-width:15px!important;height:15px!important;min-height:15px!important;padding:0!important;align-self:center;justify-self:center;flex:0 0 15px}
 #view table textarea{height:auto;min-height:42px}
 #view table button{max-width:100%;min-width:0;min-height:23px;padding:2px 5px;font-size:inherit;white-space:normal}
 #view table a{max-width:100%;overflow:hidden;text-overflow:ellipsis}
