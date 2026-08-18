@@ -18,17 +18,15 @@ import { routePermission } from './routePermissions.js';
 import { backfillVendorApprovers, transactionApproverId } from './vendorApprover.js';
 import { approvalStatus as invoiceApprovalStatus, assertBillPostable, NOT_SUBMITTED } from './apApprovalWorkflow.js';
 import { validatePdfUpload } from './pdfUpload.js';
+import { ACCOUNT_TYPES, accountUsage, buildChartChangeSet, chartAudit } from './chartOfAccounts.js';
 
 const publicDir = path.resolve('public');
 const chartOfAccountsPath=path.resolve(process.env.COA_DATA_PATH||'data/chart-of-accounts.json');
+const chartOfAccountsAuditPath=path.resolve(process.env.COA_AUDIT_PATH||'data/chart-of-accounts-audit.json');
 const storedChartOfAccounts=await readFile(chartOfAccountsPath,'utf8').then(JSON.parse).catch(()=>null);
 if(Array.isArray(storedChartOfAccounts)&&storedChartOfAccounts.length){glAccounts.splice(0,glAccounts.length,...storedChartOfAccounts);}
 glAccounts.forEach(account=>{if(account.allowManualJournalEntry===undefined)account.allowManualJournalEntry=true;});
-const ACCOUNT_TYPES=['Asset','Liability','Equity','Revenue','Expense','Asset/Liability','Income/Expense'];
-const normalForAccountType=type=>['Liability','Equity','Revenue'].includes(type)?'Credit':['Asset','Expense'].includes(type)?'Debit':null;
-const serializeGlAccount=account=>({accountType:account.accountType||'Asset/Liability',accountNumber:account.code,accountTitle:account.name,normalBalance:account.normal,active:account.active!==false,allowManualJournalEntry:account.allowManualJournalEntry!==false,currentBalance:Number(account.balance||0),debits:Number(account.debits??(Number(account.balance||0)>0?Number(account.balance):0)),credits:Number(account.credits??(Number(account.balance||0)<0?Math.abs(Number(account.balance)):0)),balance:Number(account.balance||0)});
-const normalizeAccountInput=(input,existing)=>{const code=String(input.accountNumber??input.code??'').trim(),name=String(input.accountTitle??input.name??'').trim(),accountType=String(input.accountType||'').trim();if(!code)throw new Error('Account code is required.');if(!/^[A-Za-z0-9][A-Za-z0-9._-]{0,29}$/.test(code))throw new Error(`Account code ${code} is invalid.`);if(!name)throw new Error(`Account name is required for account ${code}.`);if(!ACCOUNT_TYPES.includes(accountType))throw new Error(`Select a valid account type for account ${code}.`);const expectedNormal=normalForAccountType(accountType),normal=expectedNormal||String(input.normalBalance??input.normal??existing?.normal??'Debit');if(!['Debit','Credit'].includes(normal))throw new Error(`Select a valid normal balance for account ${code}.`);if(expectedNormal&&normal!==expectedNormal)throw new Error(`${accountType} account ${code} must have a ${expectedNormal} normal balance.`);return{code,name,accountType,normal,active:input.active!==false,allowManualJournalEntry:input.allowManualJournalEntry!==false,balance:Number(existing?.balance||0),debits:Number(existing?.debits||0),credits:Number(existing?.credits||0)};};
-const accountReferenceMessage=code=>{if(journalEntries.some(entry=>(entry.lines||[]).some(line=>String(line.account)===code)))return'Account has journal history';const sources=[apDocuments,arDocuments,itemMaster,salesOrders,salesOrderLines,shipments,shipmentLines,salesOrderInvoices,inventoryAllocations];if(sources.some(source=>JSON.stringify(source).includes(`\"${code}\"`)))return'Account is referenced by an existing transaction or setup record';return'';};
+const serializeGlAccount=account=>({accountType:account.accountType||'Asset/Liability',accountNumber:account.code,accountTitle:account.name,active:account.active!==false,allowManualJournalEntry:account.allowManualJournalEntry!==false,currentBalance:Number(account.balance||0),debits:Number(account.debits??(Number(account.balance||0)>0?Number(account.balance):0)),credits:Number(account.credits??(Number(account.balance||0)<0?Math.abs(Number(account.balance)):0)),balance:Number(account.balance||0)});
 const persistChartOfAccounts=async accounts=>{await mkdir(path.dirname(chartOfAccountsPath),{recursive:true});const temp=`${chartOfAccountsPath}.${process.pid}.${Date.now()}.tmp`;await writeFile(temp,JSON.stringify(accounts,null,2));await rename(temp,chartOfAccountsPath);};
 const security = new SecurityService({store:new FileSecurityStore()});
 await security.init();
@@ -288,6 +286,21 @@ const isAuthenticated=req=>!!req.auth;
 const requireAuthenticated=(req)=>{ if(!req.auth) throw new SecurityError(401,'Authentication required','UNAUTHENTICATED'); };
 const body=(req)=>new Promise((resolve,reject)=>{const type=String(req.headers['content-type']||'').split(';')[0];if(type!=='application/json')return reject(new SecurityError(415,'Content-Type must be application/json','CONTENT_TYPE'));let r='',size=0,done=false;req.on('data',c=>{if(done)return;size+=c.length;if(size>1024*1024){done=true;reject(new SecurityError(413,'Request body exceeds the 1 MB limit','PAYLOAD_TOO_LARGE'));req.resume();return;}r+=c;});req.on('end',()=>{if(done)return;try{const parsed=r?JSON.parse(r):{};const unsafe=(value)=>value&&typeof value==='object'&&(Object.keys(value).some(k=>['__proto__','prototype','constructor'].includes(k))||Object.values(value).some(unsafe));if(unsafe(parsed))return reject(new SecurityError(400,'Request contains prohibited properties','INVALID_INPUT'));resolve(parsed);}catch{reject(new SecurityError(400,'Invalid JSON','INVALID_JSON'));}});req.on('error',reject);});
 const POSTING_ACCOUNTS={arCash:'1079',apCash:'1084',accountsReceivable:'1210',accountsPayable:'2020',apTrade:'2010',poRni:'2020',vendorDeposit:'1960',customerDeposits:'2050',returnsAllowances:'4070',bankFees:'6060',defaultSalesRevenue:'4008'};
+const coaAuditTrail=await readFile(chartOfAccountsAuditPath,'utf8').then(JSON.parse).catch(()=>[]);
+const coaUsage=code=>accountUsage(code,{
+  journals:journalEntries,
+  balances:[glAccounts.filter(account=>Number(account.balance)||Number(account.debits)||Number(account.credits)),inventoryBalances],
+  periodHistory,
+  transactions:[apDocuments,arDocuments,purchaseOrders,purchaseOrderLines,purchaseReceipts,purchaseReceiptLines,salesOrders,salesOrderLines,shipments,shipmentLines,salesOrderInvoices,inventoryTransactions,inventoryAllocations],
+  configuration:[POSTING_ACCOUNTS,poSettings,vendors,customers,itemMaster,warehouses,taxZones,taxCategories]
+});
+async function persistChartChange(accounts,auditRecords){
+  await mkdir(path.dirname(chartOfAccountsPath),{recursive:true});
+  const suffix=`${process.pid}.${Date.now()}.tmp`,accountTemp=`${chartOfAccountsPath}.${suffix}`,auditTemp=`${chartOfAccountsAuditPath}.${suffix}`;
+  await writeFile(accountTemp,JSON.stringify(accounts,null,2));
+  await writeFile(auditTemp,JSON.stringify([...coaAuditTrail,...auditRecords],null,2));
+  try{await rename(auditTemp,chartOfAccountsAuditPath);await rename(accountTemp,chartOfAccountsPath);}catch(error){await rm(accountTemp,{force:true}).catch(()=>{});await rm(auditTemp,{force:true}).catch(()=>{});throw error;}
+}
 const PLACEHOLDER_ACCOUNTS=new Set(['Cash','AR','AP','Revenue','Expense','1000','1100','4000','4050','5000']);
 const acct=(code)=>glAccounts.find(a=>a.code===String(code));
 const accountLabel=(code)=>{const a=acct(code); return a?`${a.code} - ${a.name}`:String(code||'');};
@@ -1267,7 +1280,10 @@ const server=http.createServer(async(req,res)=>{const {pathname,query}=parse(req
  if(method==='GET'&&pathname==='/api/finance/branches') return json(res,200,branchMaster);
  if(method==='GET'&&pathname==='/api/gl/accounts') return json(res,200,glAccounts);
  if(method==='GET'&&pathname==='/api/finance/chart-of-accounts'){ const accounts=query.manual==='true'?glAccounts.filter(account=>account.active!==false&&account.allowManualJournalEntry!==false):glAccounts;return json(res,200,accounts.map(serializeGlAccount)); }
- if(method==='PUT'&&pathname==='/api/finance/chart-of-accounts'){const b=await body(req),rows=Array.isArray(b.accounts)?b.accounts:null;if(!rows)return json(res,400,{error:'A complete accounts list is required.'});try{const seen=new Set(),next=rows.map(row=>{const code=String(row.accountNumber??row.code??'').trim();if(seen.has(code))throw new Error(`Account code ${code} already exists.`);seen.add(code);return normalizeAccountInput(row,glAccounts.find(account=>account.code===code));});for(const existing of glAccounts){if(next.some(account=>account.code===existing.code))continue;const reason=accountReferenceMessage(existing.code);if(reason)throw new Error(`${reason}; account ${existing.code} cannot be deleted. Deactivate it instead.`);}await persistChartOfAccounts(next);glAccounts.splice(0,glAccounts.length,...next);return json(res,200,{accounts:glAccounts.map(serializeGlAccount)});}catch(error){return json(res,400,{error:error.message});}}
+ if(method==='GET'&&pathname==='/api/finance/chart-of-accounts/usage')return json(res,200,{usage:Object.fromEntries(glAccounts.map(account=>[account.code,coaUsage(account.code)]))});
+ if(method==='GET'&&pathname.startsWith('/api/finance/chart-of-accounts/')&&pathname.endsWith('/usage')){const code=decodeURIComponent(pathname.split('/').at(-2)),account=glAccounts.find(item=>item.code===code);if(!account)return json(res,404,{error:'Account not found.'});return json(res,200,{account:serializeGlAccount(account),usage:coaUsage(code)});}
+ if(method==='GET'&&pathname==='/api/finance/chart-of-accounts/audit')return json(res,200,coaAuditTrail);
+ if(method==='PUT'&&pathname==='/api/finance/chart-of-accounts'){try{const request=await body(req),changeSet=buildChartChangeSet(glAccounts,request,coaUsage),auditRecords=chartAudit(changeSet,{user:currentUser(req).id});await persistChartChange(changeSet.final,auditRecords);glAccounts.splice(0,glAccounts.length,...changeSet.final);coaAuditTrail.push(...auditRecords);return json(res,200,{accounts:glAccounts.map(serializeGlAccount),auditRecords});}catch(error){return json(res,409,{error:error.message});}}
  if(method==='GET'&&pathname==='/api/finance/chart-of-accounts/annual') return json(res,200,annualChartOfAccounts(query.year));
 
  if(method==='GET'&&pathname==='/api/purchase-orders/vendors'){ const q=String(query.q||'').toLowerCase(); const rows=vendors.filter(v=>!q||v.id.toLowerCase().includes(q)||v.name.toLowerCase().includes(q)).map(v=>({id:v.id,name:v.name,terms:v.terms||'NET30',vendorLocation:v.defaultLocation||'MAIN',remitInfo:v.address||'',currency:v.currency||'USD',defaultWarehouse:v.defaultWarehouse||'MAIN',apAccount:v.apAccount||POSTING_ACCOUNTS.apTrade,display:`${v.id}    ${v.name}`})); return json(res,200,rows); }
@@ -1511,3 +1527,4 @@ console.log("[Document AI Config]", {
 });
 if(process.env.NODE_ENV==='production'&&(!process.env.APP_ORIGIN||!process.env.DATABASE_URL||!process.env.OBJECT_STORAGE_PROVIDER)) throw new Error('Production security configuration is incomplete');
 server.listen(process.env.PORT||3000);
+
