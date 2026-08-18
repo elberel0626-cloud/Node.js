@@ -43,7 +43,7 @@ async function assertProfessionalFit(page, path, viewport) {
         right: rect.right,
         scrollWidth: table.scrollWidth,
         clientWidth: table.clientWidth,
-        enhanced: table.classList.contains('erp-auto-fit-table')
+        tableLayout: getComputedStyle(table).tableLayout
       };
     });
     const wrappers = [...document.querySelectorAll('#view .grid-wrap,#view .table-wrap,#view .ap-bill-lines-scroll,#view .po-subgrid')]
@@ -78,7 +78,7 @@ async function assertProfessionalFit(page, path, viewport) {
     expect(table.left, `${path} table ${table.id} starts outside the workspace`).toBeGreaterThanOrEqual(result.viewLeft - 2);
     expect(table.right, `${path} table ${table.id} extends past the workspace`).toBeLessThanOrEqual(result.viewRight + 2);
     expect(table.scrollWidth, `${path} table ${table.id} still requires its own horizontal canvas`).toBeLessThanOrEqual(table.clientWidth + 2);
-    expect(table.enhanced, `${path} table ${table.id} was not processed by the professional auto-fit helper`).toBe(true);
+    expect(table.tableLayout, `${path} table ${table.id} is not using fixed auto-fit layout`).toBe('fixed');
   }
   for (const wrapper of result.wrappers) {
     expect(wrapper.scrollWidth, `${path} ${wrapper.className} still horizontally scrolls`).toBeLessThanOrEqual(wrapper.clientWidth + 2);
@@ -102,7 +102,6 @@ for (const viewport of viewports) {
 test('Incoming Documents uses one fitted workspace instead of a nested scrolling grid', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await openView(page, '/ap/incoming-documents', '#incomingDocsGrid');
-  await page.waitForFunction(() => document.querySelector('#incomingDocsGrid')?.classList.contains('erp-auto-fit-table'));
   const result = await page.evaluate(() => {
     const table = document.querySelector('#incomingDocsGrid');
     const wrapper = table?.closest('.grid-wrap');
@@ -114,10 +113,12 @@ test('Incoming Documents uses one fitted workspace instead of a nested scrolling
       tableClientWidth: table?.clientWidth || 0,
       wrapperScrollWidth: wrapper?.scrollWidth || 0,
       wrapperClientWidth: wrapper?.clientWidth || 0,
+      tableLayout: table ? getComputedStyle(table).tableLayout : '',
       rootScrollWidth: document.documentElement.scrollWidth,
       rootClientWidth: document.documentElement.clientWidth
     };
   });
+  expect(result.tableLayout).toBe('fixed');
   expect(result.tableWidth).toBeLessThanOrEqual(result.contentWidth + 2);
   expect(result.tableScrollWidth).toBeLessThanOrEqual(result.tableClientWidth + 2);
   expect(result.wrapperScrollWidth).toBeLessThanOrEqual(result.wrapperClientWidth + 2);
