@@ -34,16 +34,42 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Repair patch helper replacement handling
+      - name: Normalize patch helper and responsive source
         run: |
           python - <<'PY'
           from pathlib import Path
-          p=Path('scripts/apply_erp_fix.py')
-          s=p.read_text()
-          old="out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)"
-          new="out, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)"
+          import re
+
+          patch=Path('scripts/apply_erp_fix.py')
+          s=patch.read_text()
+          s=s.replace(
+              "out, count = re.subn(pattern, replacement, text, count=1, flags=re.S)",
+              "out, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)",
+              1
+          )
+          old="""    if count != 1:\n        raise SystemExit(f'{label}: expected exactly one match, found {count}')\n    return text.replace(old, new, 1)"""
+          new="""    if count != 1:\n        if label == 'responsive static asset serving' and '/responsive.css' in text:\n            return text\n        raise SystemExit(f'{label}: expected exactly one match, found {count}')\n    return text.replace(old, new, 1)"""
           if old in s:
-              p.write_text(s.replace(old,new,1))
+              s=s.replace(old,new,1)
+          patch.write_text(s)
+
+          index=Path('public/index.html')
+          html=index.read_text()
+          html=html.replace("<link rel='stylesheet' href='/responsive.css?v=erp-responsive-20260817'>",'')
+          index.write_text(html)
+
+          server=Path('src/server.js')
+          src=server.read_text()
+          if "'/responsive.css'" not in src:
+              src,count=re.subn(
+                  r"async function serve\(p,res\)\{\s*if\(p==='/app\.js'\|\|p==='/styles\.css'\)",
+                  "async function serve(p,res){ if(['/app.js','/styles.css','/responsive.css'].includes(p))",
+                  src,
+                  count=1
+              )
+              if count != 1:
+                  raise SystemExit('Could not update static asset serving for responsive.css')
+              server.write_text(src)
           PY
 
       - name: Apply deterministic source patch
