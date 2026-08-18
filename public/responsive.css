@@ -21,6 +21,23 @@ input,select,textarea{max-width:100%;min-width:0}
 .cn-modal,.erp-dialog{width:min(980px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto}
 .erp-lookup-panel{max-width:calc(100vw - 16px)}
 
+/* AP Incoming Documents: keep both the list and split invoice-review workspace inside the available content area. */
+#incomingReview,.incoming-review-screen,.incoming-split,.incoming-pdf-panel,.incoming-form-panel,#invoiceReviewForm,#validationPanel,#processingStatus{min-width:0;max-width:100%}
+.incoming-review-screen{width:100%;overflow:hidden}
+.incoming-split{width:100%;max-width:100%;min-width:0;overflow:hidden}
+.incoming-pdf-panel,.incoming-form-panel{min-width:0;max-width:100%}
+.incoming-form-panel{overflow-x:hidden}
+.incoming-form-panel .panel{min-width:0;max-width:100%;overflow-x:auto}
+.incoming-review-screen .erp-header-grid{grid-template-columns:repeat(auto-fit,minmax(min(220px,100%),1fr))}
+.review-toolbar,.pdf-toolbar{max-width:100%;min-width:0;flex-wrap:wrap}
+.review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{flex:0 0 auto}
+.pdf-holder,.pdf-frame{max-width:100%;min-width:0}
+#invoiceReviewForm>table,#incomingReview table{min-width:900px;max-width:none}
+#incomingReview>.panel{min-width:0;max-width:100%;overflow-x:auto}
+#incomingDocsGrid{font-size:12px;min-width:1250px;max-width:none}
+#incomingDocsGrid th,#incomingDocsGrid td{padding:5px 6px;white-space:nowrap}
+#incomingDocsGrid input,#incomingDocsGrid select{min-width:0}
+
 @media (max-width:1500px){
   .erp-header-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
@@ -30,6 +47,11 @@ input,select,textarea{max-width:100%;min-width:0}
   .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header{grid-template-columns:repeat(2,minmax(0,1fr))}
   .grid4,.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .content{padding:12px}
+  .incoming-split{flex-direction:column}
+  .incoming-pdf-panel,.incoming-form-panel{flex:1 1 auto;width:100%;max-width:100%}
+  .split-divider{display:none}
+  .incoming-form-panel .panel{margin-left:0}
+  .pdf-holder,.pdf-frame{min-height:48vh}
 }
 
 @media (max-width:900px){
@@ -40,6 +62,8 @@ input,select,textarea{max-width:100%;min-width:0}
   .sidebar{padding:10px}
   .content{padding:10px}
   .grid4,.finance-grid{grid-template-columns:1fr}
+  .incoming-review-screen .erp-header-grid{grid-template-columns:1fr}
+  #incomingDocsGrid{min-width:1100px}
 }
 
 @media (max-width:720px){
@@ -49,4 +73,8 @@ input,select,textarea{max-width:100%;min-width:0}
   .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.grid4,.finance-grid{grid-template-columns:1fr}
   .header-row{align-items:flex-start}
   .erp-toolbar{position:static}
+  .review-toolbar,.pdf-toolbar{align-items:stretch}
+  .review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{max-width:100%}
+  .pdf-toolbar a button{width:100%}
+  #invoiceReviewForm>table,#incomingReview table{min-width:760px}
 }
