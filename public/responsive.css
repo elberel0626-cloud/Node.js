@@ -1,90 +1,146 @@
-/* Responsive shell overrides: keep the ERP inside the browser viewport while allowing genuinely wide accounting grids to scroll locally. */
-html,body{width:100%;max-width:100%;overflow-x:hidden}
-#app,.main,.content,#view,.erp-workspace,.panel,.tab-pane,.grid4,.finance-grid,.ap-pay-grid,.pay-head3,.so-header,.period-screen,.payment-layout{min-width:0;max-width:100%}
-#app{width:100%;max-width:100vw}
-.main{width:100%;max-width:100vw;grid-template-columns:240px minmax(0,1fr)}
-.sidebar{min-width:0;max-width:100%;overflow-x:hidden}
-.content{min-width:0;max-width:100%;overflow-x:hidden}
-#view>*{max-width:100%;min-width:0}
-input,select,textarea{max-width:100%;min-width:0}
-.header-row,.erp-toolbar,.grid-tools,.cn-filters,.cn-foot,.so-toolbar{flex-wrap:wrap;gap:6px}
-.header-row>*{min-width:0}
-.erp-tabs{max-width:100%;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
-.erp-tabs .tab{flex:0 0 auto;white-space:nowrap}
-.erp-header-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
-.ap-pay-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-.grid4,.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-.pay-head3,.so-header{grid-template-columns:repeat(3,minmax(0,1fr))}
-.table-wrap,.grid-wrap,.ap-bill-lines-scroll,.po-subgrid,#docsGrid,#histGrid{display:block;min-width:0;max-width:100%;overflow-x:auto;overflow-y:visible;-webkit-overflow-scrolling:touch}
-.table-wrap table,.grid-wrap table,.ap-bill-lines-scroll table,.po-subgrid table,#docsGrid table,#histGrid table{max-width:none}
-.cn-overlay{padding:12px}
-.cn-modal,.erp-dialog{width:min(980px,calc(100vw - 24px));max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto}
-.erp-lookup-panel{max-width:calc(100vw - 16px)}
+/* Unified professional ERP layout.
+   Goal: every module uses the same compact, fluid desktop workspace and fits the active browser window.
+   Tables shrink to the workspace instead of creating a second horizontal canvas. */
 
-/* AP Incoming Documents is an auto-fit exception: keep the full list in the current window instead of making it a separate horizontally scrollable canvas. */
-#incomingReview,.incoming-review-screen,.incoming-split,.incoming-pdf-panel,.incoming-form-panel,#invoiceReviewForm,#validationPanel,#processingStatus{min-width:0;max-width:100%}
-.incoming-review-screen{width:100%;overflow:hidden}
-.incoming-split{display:flex;width:100%;max-width:100%;min-width:0;overflow:hidden}
-.incoming-pdf-panel{flex:0 1 46%;min-width:0;max-width:46%;overflow:hidden}
-.incoming-form-panel{flex:1 1 54%;min-width:0;max-width:54%;overflow:hidden}
-.incoming-form-panel .panel{min-width:0;max-width:100%;overflow:visible}
-.incoming-review-screen .erp-header-grid{grid-template-columns:repeat(auto-fit,minmax(min(190px,100%),1fr))}
-.review-toolbar,.pdf-toolbar{max-width:100%;min-width:0;flex-wrap:wrap}
-.review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{flex:0 1 auto;min-width:0}
-.pdf-holder,.pdf-frame{max-width:100%;min-width:0}
+html,body{width:100%;max-width:100%;margin:0;overflow-x:hidden}
+body{font-size:13px}
+*{min-width:0}
+#app{width:100%;max-width:100vw;min-height:100vh;overflow-x:hidden}
+.main{display:grid;width:100%;max-width:100vw;grid-template-columns:clamp(175px,14vw,225px) minmax(0,1fr)}
+.sidebar{min-width:0;max-width:100%;overflow:hidden;padding:10px;background:#eef3fa}
+.sidebar .nav-group{margin-bottom:8px;padding-bottom:6px}
+.sidebar .nav-group-title{margin:4px 6px 3px;font-size:10px}
+.sidebar a{padding:6px 7px;font-size:12px;line-height:1.15}
+.sidebar button{max-width:100%;font-size:11px;padding:5px 7px}
+.content{width:100%;max-width:100%;min-width:0;overflow-x:hidden;padding:clamp(8px,1vw,16px)}
+#title{margin:0 0 8px;font-size:20px;line-height:1.2}
+#view,#view>*{width:100%;max-width:100%;min-width:0}
 
-/* Fit incoming-document tables to their available panel. Long values wrap instead of forcing horizontal scrolling. */
+/* Compact professional controls */
+input,select,textarea,button{max-width:100%;min-width:0;font-size:12px}
+input,select{min-height:27px;padding:4px 6px}
+textarea{padding:5px 6px}
+button{min-height:27px;padding:4px 8px;line-height:1.15}
+label{min-width:0}
+
+/* One toolbar language everywhere. */
+.header-row,.erp-toolbar,.grid-tools,.cn-filters,.cn-foot,.so-toolbar,.review-toolbar,.pdf-toolbar,.po-match-actions,.attachment-upload-row{display:flex;align-items:center;flex-wrap:wrap;gap:5px;max-width:100%;min-width:0}
+.header-row{align-items:flex-start;margin-bottom:7px}
+.header-row>h3,.header-row>h4{margin:3px 8px 3px 0}
+.erp-toolbar,.so-toolbar{position:sticky;top:0;z-index:2000;padding:6px;margin-bottom:7px;background:#fff;border:1px solid var(--border)}
+.erp-toolbar button,.erp-toolbar select,.so-toolbar button,.so-toolbar select{flex:0 1 auto}
+
+/* Fluid form/header grids: the browser decides how many columns fit. */
+.erp-workspace,.panel,.tab-pane,.card,.period-screen,.payment-layout,.po-detail,.so-screen{width:100%;max-width:100%;min-width:0}
+.erp-workspace{padding:8px}
+.panel,.tab-pane{border-radius:4px;padding:9px}
+.erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(155px,100%),1fr))!important;gap:7px 10px!important;width:100%;max-width:100%;min-width:0}
+.erp-header-grid label,.ap-pay-grid label,.pay-head3 label,.so-header label,.po-header label{display:flex;flex-direction:column;gap:2px;font-size:11px;line-height:1.15;min-width:0}
+.erp-header-grid input,.erp-header-grid select,.erp-header-grid textarea,.ap-pay-grid input,.ap-pay-grid select,.pay-head3 input,.pay-head3 select,.so-header input,.so-header select,.po-header input,.po-header select{width:100%;max-width:100%;min-width:0}
+.grid4,.finance-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(min(210px,100%),1fr))!important;gap:8px!important;width:100%;max-width:100%;min-width:0}
+
+/* Tabs wrap like a desktop ERP ribbon; they never become a separate scrolling strip. */
+.erp-tabs{display:flex;flex-wrap:wrap!important;gap:2px;margin-top:8px;max-width:100%;overflow:visible!important;border-bottom:1px solid #bfc8d6}
+.erp-tabs .tab{flex:0 1 auto;white-space:normal!important;padding:5px 8px;font-size:11px;line-height:1.15}
+
+/* Professional auto-fit grids. Inline widths saved by older screens are deliberately overridden.
+   Full values remain accessible through browser tooltips added by the layout helper. */
+.grid-wrap,.table-wrap,.ap-bill-lines-scroll,.po-subgrid,#docsGrid,#histGrid{display:block;width:100%;max-width:100%;min-width:0;overflow:visible!important}
+#view table{width:100%!important;max-width:100%!important;min-width:0!important;table-layout:fixed!important;border-collapse:collapse}
+#view table th,#view table td{width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box;vertical-align:middle;padding:4px 5px;font-size:var(--erp-grid-font,11px);line-height:1.15;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#view table th{font-size:var(--erp-grid-head-font,10.5px);font-weight:600;white-space:normal;overflow-wrap:anywhere;word-break:normal;vertical-align:bottom}
+#view table td[data-k*='description' i],#view table td[data-k*='name' i],#view table td[data-k*='vendor' i],#view table td[data-k*='customer' i],#view table td[data-k*='filename' i],#view table td.erp-wrap-cell{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+#view table input,#view table select,#view table textarea{width:100%!important;max-width:100%!important;min-width:0!important;height:24px;padding:2px 3px;font-size:inherit}
+#view table textarea{height:auto;min-height:42px}
+#view table button{max-width:100%;min-width:0;min-height:23px;padding:2px 5px;font-size:inherit;white-space:normal}
+#view table a{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.grid-check-col{width:30px!important;min-width:30px!important;max-width:30px!important;padding:2px!important;text-align:center}
+.grid-resizer{display:none!important}
+.th-wrap{gap:2px;min-width:0}
+.th-wrap>span:first-child{min-width:0;overflow-wrap:anywhere}
+.grid-dir{font-size:8px;line-height:1}
+.grid-filter-btn{min-height:18px!important;padding:1px 3px!important;font-size:9px!important}
+.f-badge{display:none!important}
+.grid-tools{margin:4px 0 5px;padding:0}
+.grid-tools .grid-search{flex:1 1 180px;max-width:300px}
+.grid-tools select{flex:0 1 190px}
+.grid-tools button{font-size:10.5px;padding:3px 6px;min-height:25px}
+.grid-pagination{padding:7px 5px;gap:8px}
+.grid-pagination button{min-height:24px}
+
+/* Column-count density buckets assigned by the inline layout helper. */
+table.erp-cols-medium{--erp-grid-font:10.5px;--erp-grid-head-font:10px}
+table.erp-cols-dense{--erp-grid-font:9.5px;--erp-grid-head-font:9px}
+table.erp-cols-ultra{--erp-grid-font:8.5px;--erp-grid-head-font:8px}
+table.erp-cols-ultra th,table.erp-cols-ultra td{padding:3px 2px!important}
+table.erp-cols-dense th,table.erp-cols-dense td{padding:3px 3px!important}
+
+/* Incoming documents and invoice verification use the same system, not a special scroll canvas. */
+#incomingReview,.incoming-review-screen,.incoming-split,.incoming-pdf-panel,.incoming-form-panel,#invoiceReviewForm,#validationPanel,#processingStatus{width:100%;max-width:100%;min-width:0}
+.incoming-review-screen{overflow:hidden}
+.incoming-split{display:flex;width:100%;max-width:100%;min-width:0;overflow:hidden;align-items:stretch}
+.incoming-pdf-panel{flex:0 1 42%;width:42%;max-width:42%;min-width:0;overflow:hidden}
+.incoming-form-panel{flex:1 1 58%;width:58%;max-width:58%;min-width:0;overflow:hidden}
+.incoming-form-panel .panel{margin:0 0 7px 7px;max-width:calc(100% - 7px);overflow:visible}
+.incoming-review-screen .erp-header-grid{grid-template-columns:repeat(auto-fit,minmax(min(145px,100%),1fr))!important}
+.pdf-holder,.pdf-frame{width:100%;max-width:100%;min-width:0}
+.pdf-holder{min-height:62vh}
+.pdf-frame{min-height:62vh}
+.split-divider{flex:0 0 6px;width:6px}
 #incomingDocsGrid,#invoiceReviewForm>table,#incomingReview table{width:100%!important;max-width:100%!important;min-width:0!important;table-layout:fixed!important}
-#incomingDocsGrid th,#incomingDocsGrid td,#invoiceReviewForm>table th,#invoiceReviewForm>table td,#incomingReview table th,#incomingReview table td{white-space:normal!important;overflow-wrap:anywhere;word-break:break-word;vertical-align:top;line-height:1.15;padding:4px 4px}
-#incomingDocsGrid{font-size:clamp(9px,.72vw,12px)}
-#invoiceReviewForm>table,#incomingReview table{font-size:clamp(9px,.68vw,11px)}
-#incomingDocsGrid input,#incomingDocsGrid select,#invoiceReviewForm>table input,#invoiceReviewForm>table select,#incomingReview table input,#incomingReview table select{width:100%;max-width:100%;min-width:0;padding:3px 4px;font-size:inherit}
-#incomingDocsGrid button,#invoiceReviewForm>table button,#incomingReview table button{max-width:100%;min-width:0;padding:4px 5px;font-size:inherit;white-space:normal}
-#incomingReview>.panel{min-width:0;max-width:100%;overflow:visible}
 
-@media (max-width:1500px){
-  .erp-header-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+/* Modals and lookups stay inside the active monitor/window. */
+.cn-overlay{padding:10px}
+.cn-modal,.erp-dialog,.split-document-modal{width:min(980px,calc(100vw - 20px));max-width:calc(100vw - 20px);max-height:calc(100vh - 20px);overflow:auto}
+.erp-lookup-panel{max-width:calc(100vw - 12px);max-height:min(360px,55vh)}
+
+/* Top module ribbon stays visible and wraps rather than requiring a second horizontal strip. */
+.topnav{min-height:48px;height:auto;max-width:100vw;display:flex;align-items:center;flex-wrap:wrap;gap:3px;padding:5px 8px;overflow:hidden}
+.topnav a{padding:5px 7px;font-size:11px;line-height:1.1;white-space:normal}
+
+@media (max-width:1300px){
+  .main{grid-template-columns:185px minmax(0,1fr)}
+  .content{padding:9px}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header{grid-template-columns:repeat(auto-fit,minmax(min(140px,100%),1fr))!important}
+  #view table th,#view table td{padding:3px 4px}
 }
 
-@media (max-width:1200px){
-  .main{grid-template-columns:210px minmax(0,1fr)}
-  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .grid4,.finance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .content{padding:12px}
-  .incoming-pdf-panel{flex-basis:43%;max-width:43%}
-  .incoming-form-panel{flex-basis:57%;max-width:57%}
-  #incomingDocsGrid{font-size:9px}
+@media (max-width:1050px){
+  .main{grid-template-columns:155px minmax(0,1fr)}
+  .sidebar{padding:6px}
+  .sidebar a{font-size:10.5px;padding:5px}
+  .sidebar .nav-group-title{font-size:9px}
+  .content{padding:7px}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header{grid-template-columns:repeat(auto-fit,minmax(min(128px,100%),1fr))!important}
+  #view table{--erp-grid-font:9.5px;--erp-grid-head-font:9px}
+  #view table th,#view table td{padding:3px 2px}
+  .incoming-pdf-panel{flex-basis:39%;width:39%;max-width:39%}
+  .incoming-form-panel{flex-basis:61%;width:61%;max-width:61%}
 }
 
-@media (max-width:900px){
-  #app{grid-template-rows:auto 1fr}
-  .topnav{min-height:56px;height:auto;max-width:100vw;overflow-x:auto;overflow-y:hidden;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
-  .topnav a{flex:0 0 auto;white-space:nowrap}
-  .main{grid-template-columns:180px minmax(0,1fr)}
-  .sidebar{padding:10px}
-  .content{padding:10px}
-  .grid4,.finance-grid{grid-template-columns:1fr}
-  .incoming-review-screen .erp-header-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .incoming-pdf-panel{flex-basis:40%;max-width:40%}
-  .incoming-form-panel{flex-basis:60%;max-width:60%}
-  #incomingDocsGrid th,#incomingDocsGrid td{padding:3px 2px;font-size:8px}
-}
-
-@media (max-width:720px){
+@media (max-width:820px){
+  #app{display:block}
   .main{display:block;width:100%}
-  .sidebar{width:100%;border-right:0;border-bottom:1px solid var(--border);max-height:32vh;overflow:auto}
-  .content{width:100%;padding:8px}
-  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.grid4,.finance-grid{grid-template-columns:1fr}
-  .header-row{align-items:flex-start}
-  .erp-toolbar{position:static}
+  .sidebar{display:flex;flex-wrap:wrap;align-items:flex-start;gap:4px;width:100%;max-height:none;border-right:0;border-bottom:1px solid var(--border);padding:5px}
+  .sidebar>#customizeNavBtn{flex:0 0 auto}
+  .sidebar .nav-group{display:flex;flex-wrap:wrap;gap:2px;margin:0;padding:0;border:0}
+  .sidebar .nav-group-title{width:100%;margin:2px 4px;font-size:9px}
+  .sidebar a{display:inline-block;padding:4px 5px}
+  .content{width:100%;padding:6px}
   .incoming-split{flex-direction:column}
   .incoming-pdf-panel,.incoming-form-panel{flex:1 1 auto;width:100%;max-width:100%}
+  .incoming-form-panel .panel{margin-left:0;max-width:100%}
   .split-divider{display:none}
-  .incoming-form-panel .panel{margin-left:0}
   .pdf-holder,.pdf-frame{min-height:44vh}
-  .review-toolbar,.pdf-toolbar{align-items:stretch}
-  .review-toolbar button,.pdf-toolbar button,.pdf-toolbar a{max-width:100%}
-  .pdf-toolbar a button{width:100%}
-  .incoming-review-screen .erp-header-grid{grid-template-columns:1fr}
-  #incomingDocsGrid th,#incomingDocsGrid td{font-size:7px;padding:2px 1px}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header{grid-template-columns:repeat(auto-fit,minmax(min(135px,100%),1fr))!important}
+  #title{font-size:18px}
+}
+
+@media (max-width:560px){
+  .topnav a{font-size:10px;padding:4px 5px}
+  .erp-header-grid,.ap-pay-grid,.pay-head3,.so-header,.po-header,.grid4,.finance-grid{grid-template-columns:1fr!important}
+  .header-row,.erp-toolbar,.so-toolbar,.review-toolbar,.pdf-toolbar{align-items:stretch}
+  .erp-toolbar button,.erp-toolbar select,.review-toolbar button{flex:1 1 auto}
+  #view table{--erp-grid-font:8px;--erp-grid-head-font:7.5px}
+  #view table th,#view table td{padding:2px 1px!important}
 }
