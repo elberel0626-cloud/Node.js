@@ -23,7 +23,7 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['GET'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_READ'],
   [['POST'],/^\/api\/inventory\/documents\/post$/,'INVENTORY_POST'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_ADJUST'],
-  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions|account-details)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
+  [['GET'],/^\/api\/(?:finance\/(?:branches|chart-of-accounts|trial-balance|financial-periods?|financial-period-history|journal-transactions|account-details|account-summary|account-by-period)(?:\/.*)?|gl\/(?:accounts|journal-entries))$/,'GL_JOURNAL_CREATE'],
   [['PUT'],/^\/api\/finance\/chart-of-accounts$/,'SYSTEM_CONFIGURATION_ADMIN'],
   [['POST'],/^\/api\/finance\/journal-transactions\/post$/,'GL_JOURNAL_POST'],
   [['POST'],/^\/api\/finance\/journal-transactions\/reverse$/,'GL_JOURNAL_REVERSE'],
@@ -37,3 +37,4 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['GET','POST','PUT','PATCH','DELETE'],/^\/api\/notifications(?:\/.*)?$/,'AP_BILL_READ']
 ]);
 export function routePermission(method,pathname){return BUSINESS_ROUTE_PERMISSIONS.find(([methods,path])=>methods.includes(method)&&path.test(pathname))?.[2]||null;}
+
