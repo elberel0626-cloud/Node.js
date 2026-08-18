@@ -1,8 +1,71 @@
-<!doctype html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>ERP</title><link rel='stylesheet' href='/styles.css'><link rel='stylesheet' href='/responsive.css?v=erp-responsive-20260817'></head><body>
-<main id='login-screen' class='centered'><form id='login-form' class='card'><h2>Cloud ERP Login</h2><input id='username' placeholder='Username' required><input id='password' type='password' placeholder='Password' required><button>Sign In</button><p id='login-error'></p></form></main>
+<!doctype html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>ERP</title><link rel='stylesheet' href='/styles.css'><link rel='stylesheet' href='/responsive.css?v=professional-erp-layout-20260817-1'></head><body>
+<main id='login-screen' class='centered'><form id='login-form' class='card'><h2>Cloud ERP Login</h2><input id='username' placeholder='Username' required><input id='password' type='password' required><button>Sign In</button><p id='login-error'></p></form></main>
 <div id='app' class='hidden'>
 <header class='topnav' id='module-nav'></header>
 <div class='main'><aside class='sidebar' id='ar-nav'></aside><section class='content'><h2 id='title'></h2><div id='view'></div></section></div>
 </div>
 <script src='/apBillCompatibility.js'></script>
+<script>
+/* Compatibility for legacy non-GL line-description fallbacks that reference `je` outside Journal Entry scope. */
+var je=globalThis.je||{module:'',jeNumber:''};
+
+/* Professional ERP auto-fit helper. It keeps every visible table inside the current workspace,
+   assigns sensible proportional column widths, increases density for many-column grids,
+   and preserves full values as hover tooltips instead of creating nested horizontal canvases. */
+(function(){
+  const densityClass=count=>count>=18?'erp-cols-ultra':count>=12?'erp-cols-dense':count>=8?'erp-cols-medium':'';
+  const columnWeight=(label,cell)=>{
+    const value=String(label||'').toLowerCase();
+    if(cell?.querySelector('input[type="checkbox"]')||/^(actions?|remove|select)$/.test(value))return .5;
+    if(/description|customer|vendor|filename|account name|item name|reference description|notes?/.test(value))return 1.65;
+    if(/number|reference|account|document|invoice|purchase order|sales order|po |je |batch/.test(value))return 1.05;
+    if(/amount|balance|total|debit|credit|price|cost|quantity|qty|tax|discount|currency/.test(value))return .82;
+    if(/date|period|status|branch|uom|warehouse|type/.test(value))return .72;
+    return 1;
+  };
+  const wrapColumn=label=>/description|customer|vendor|filename|name|notes?/.test(String(label||'').toLowerCase());
+  function enhanceTable(table){
+    if(!table||!table.closest('#view'))return;
+    const header=table.tHead?.rows?.[0]||[...table.rows].find(row=>row.querySelector('th'));
+    if(!header)return;
+    const cells=[...header.cells];
+    const logicalCount=cells.reduce((sum,cell)=>sum+Math.max(1,Number(cell.colSpan||1)),0);
+    const signature=`${logicalCount}:${cells.map(cell=>cell.textContent.trim()).join('|')}`;
+    if(table.dataset.erpFitSignature===signature)return;
+    table.dataset.erpFitSignature=signature;
+    table.classList.add('erp-auto-fit-table');
+    table.classList.remove('erp-cols-medium','erp-cols-dense','erp-cols-ultra');
+    const density=densityClass(logicalCount); if(density)table.classList.add(density);
+    table.style.setProperty('--erp-col-count',String(logicalCount));
+
+    if(cells.length&&cells.every(cell=>Number(cell.colSpan||1)===1)){
+      table.querySelector('colgroup[data-erp-auto-fit]')?.remove();
+      const weights=cells.map(cell=>columnWeight(cell.textContent.trim(),cell));
+      const total=weights.reduce((sum,value)=>sum+value,0)||1;
+      const group=document.createElement('colgroup'); group.dataset.erpAutoFit='1';
+      weights.forEach(weight=>{const col=document.createElement('col');col.style.width=`${((weight/total)*100).toFixed(3)}%`;group.appendChild(col);});
+      table.insertBefore(group,table.firstChild);
+      cells.forEach((cell,index)=>{
+        const label=cell.textContent.trim();
+        cell.title=label;
+        if(wrapColumn(label)){
+          [...table.rows].slice(1).forEach(row=>row.cells[index]?.classList.add('erp-wrap-cell'));
+        }
+      });
+    }
+
+    table.querySelectorAll('td').forEach(cell=>{
+      const text=cell.textContent.replace(/\s+/g,' ').trim();
+      if(text&&!cell.title)cell.title=text;
+      cell.querySelectorAll('input,select,textarea').forEach(control=>{const value=control.value||control.options?.[control.selectedIndex]?.text||'';if(value)control.title=value;});
+    });
+  }
+  let scheduled=false;
+  const enhanceAll=()=>{scheduled=false;document.querySelectorAll('#view table').forEach(enhanceTable);};
+  const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(enhanceAll);};
+  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  window.addEventListener('resize',schedule,{passive:true});
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
+})();
+</script>
 <script type='module' src='/app.js?v=finance-gl-drilldown-20260730-2'></script></body></html>
