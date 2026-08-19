@@ -96,7 +96,7 @@ export function securityHeaders(req,res) {
   // `frame-ancestors 'none'` on the PDF was the cause of "refused to connect".
   const isIncomingPdf=/^\/api\/ap\/incoming-documents\/[^/]+\/file(?:\?|$)/.test(req.url||'');
   const frameAncestors=isIncomingPdf?"'self'":"'none'";
-  res.setHeader('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors ${frameAncestors}; form-action 'self'`);
+  res.setHeader('Content-Security-Policy',`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors ${frameAncestors}; form-action 'self'`);
   res.setHeader('X-Frame-Options',isIncomingPdf?'SAMEORIGIN':'DENY');
   res.setHeader('Strict-Transport-Security','max-age=31536000; includeSubDomains'); res.setHeader('X-Content-Type-Options','nosniff'); res.setHeader('Referrer-Policy','no-referrer'); res.setHeader('Permissions-Policy','camera=(), microphone=(), geolocation=()'); res.setHeader('Cross-Origin-Opener-Policy','same-origin'); res.setHeader('Cross-Origin-Resource-Policy','same-origin');
   if(req.url?.startsWith('/api/')||req.headers.cookie?.includes(`${COOKIE_NAME}=`)) res.setHeader('Cache-Control','no-store');
