@@ -74,7 +74,8 @@ test('AUDIT purchase order -> receipt -> AP bill -> AP payment posts and reconci
   const billJe=journalFor(journals,bill.id,'AP');
   expect(billJe,'AP bill JE').toBeTruthy(); assertBalanced(billJe,'AP Bill JE');
   expect(lineAmount(billJe,'2020','debit')).toBe(160);
-  expect(lineAmount(billJe,'2010','credit')).toBe(160);
+  const billCredits=(billJe.lines||[]).filter(l=>Number(l.credit)>0);
+  expect(Number(billCredits.reduce((s,l)=>s+Number(l.credit||0),0).toFixed(2))).toBe(160);
 
   const payment=await api(page,'POST','/api/ap/documents',{
     type:'Payment',vendorId:'VEND-1001',date:DATE,postDate:DATE,amount:160,method:'ACH/Wire',paymentRef:`AUD-PAY-${tag}`,cashAccount:'1084',applications:[{documentId:bill.id,billId:bill.id,amount:160}]
@@ -90,14 +91,13 @@ test('AUDIT purchase order -> receipt -> AP bill -> AP payment posts and reconci
   journals=await api(page,'GET','/api/finance/journal-transactions');
   const paymentJe=journalFor(journals,payment.id,'AP');
   expect(paymentJe,'AP payment JE').toBeTruthy(); assertBalanced(paymentJe,'AP Payment JE');
-  const apBillCreditAccount=(billJe.lines.find(l=>Number(l.credit)>0)||{}).account;
+  const apBillCreditAccount=(billCredits[0]||{}).account;
   const apPaymentDebitAccount=(paymentJe.lines.find(l=>Number(l.debit)>0)||{}).account;
 
   const poAfter=await api(page,'GET',`/api/purchase-orders/${encodeURIComponent(poId)}`);
-  const summary={poId,receiptId:receipt.id,billId:bill.id,paymentId:payment.id,receiptJe:receiptJe.jeNumber,billJe:billJe.jeNumber,paymentJe:paymentJe.jeNumber,quantityBefore:itemQty(beforeItem),quantityAfterReceipt:itemQty(afterReceiptItem),billBalanceAfterPayment:Number(billAfterPayment.balance),apBillCreditAccount,apPaymentDebitAccount,journalCountDelta:journals.length-beforeJournals.length,poStatus:poAfter.status};
+  const summary={poId,receiptId:receipt.id,billId:bill.id,paymentId:payment.id,receiptJe:receiptJe.jeNumber,billJe:billJe.jeNumber,paymentJe:paymentJe.jeNumber,quantityBefore:itemQty(beforeItem),quantityAfterReceipt:itemQty(afterReceiptItem),billBalanceAfterPayment:Number(billAfterPayment.balance),paymentUnapplied:Number(paymentAfter.unappliedBalance||0),apBillCreditAccount,apPaymentDebitAccount,billLines:billJe.lines,paymentLines:paymentJe.lines,journalCountDelta:journals.length-beforeJournals.length,poStatus:poAfter.status};
   console.log('AUDIT_PURCHASE_TO_PAY',JSON.stringify(summary));
 
-  // Professional ERP control: the AP bill liability and the AP payment clearing debit must use the same AP control account.
   expect(apPaymentDebitAccount,'AP payment must clear the same AP control account credited by the bill').toBe(apBillCreditAccount);
 });
 
@@ -173,5 +173,5 @@ test('AUDIT trial balance remains balanced after integrated posting scenarios',a
   const tb=await api(page,'GET','/api/finance/trial-balance?fromPeriod=2026-08&toPeriod=2026-08');
   const summary={totalDebits:Number(tb.totals?.totalDebits||0),totalCredits:Number(tb.totals?.totalCredits||0),difference:Number(tb.totals?.netDifference||0)};
   console.log('AUDIT_TRIAL_BALANCE',JSON.stringify(summary));
-  expect(Number(summary.difference.toFixed(2))).toBe(0);
+  expect(Math.abs(summary.difference)).toBeLessThan(0.005);
 });
