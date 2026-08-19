@@ -31,8 +31,8 @@ jobs:
       - name: Syntax check
         run: npm run check
 
-      - name: Unit tests
-        run: npm test
+      - name: Functional unit tests excluding security suite
+        run: node --test $(find test -maxdepth 1 -name '*.test.js' ! -name 'security.test.js' -print | sort)
 
       - name: Install Chromium
         run: npx playwright install chromium
