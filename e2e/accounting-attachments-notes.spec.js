@@ -9,9 +9,18 @@ test.beforeAll(async()=>{fixtureDirectory=await mkdtemp(path.join(os.tmpdir(),'e
 test.afterAll(async()=>rm(fixtureDirectory,{recursive:true,force:true}));
 
 const browserFailures=page=>{const failures=[];page.on('pageerror',error=>failures.push(`pageerror: ${error.message}`));page.on('console',message=>{if(message.type()==='error')failures.push(`console: ${message.text()}`);});page.on('requestfailed',request=>failures.push(`requestfailed: ${request.url()} ${request.failure()?.errorText}`));return failures;};
+
+async function verifyAttachmentLink(page,context,link){
+  const href=await link.getAttribute('href');
+  expect(href).toMatch(/^\/api\/attachments\/ATT-.+\/file$/);
+  const probe=await page.evaluate(async href=>{const response=await fetch(href);const bytes=await response.arrayBuffer();return{status:response.status,type:response.headers.get('content-type')||'',size:bytes.byteLength};},href);
+  expect(probe.status).toBe(200);expect(probe.type).toContain('application/pdf');expect(probe.size).toBeGreaterThan(20);
+  const popupPromise=context.waitForEvent('page');await link.click();const popup=await popupPromise;await popup.waitForLoadState('domcontentloaded');expect(new URL(popup.url()).pathname).toBe(href);await popup.close();
+}
+
 async function uploadRefreshAndOpen(page,context){
   await expect(page.locator('#attachmentsButton')).toBeVisible();await page.locator('#attachmentsButton').click();const before=await page.locator('.attachment-row').count();await page.locator('#attachmentFile').setInputFiles(fixture);await expect(page.locator('.attachment-row')).toHaveCount(before+1);await page.reload();await expect(page.locator('#attachmentsButton')).toContainText(`Attachments ${before+1}`);await page.locator('#attachmentsButton').click();
-  const popupPromise=context.waitForEvent('page'),responsePromise=page.waitForResponse(response=>/\/api\/attachments\/ATT-.+\/file$/.test(response.url()));await page.locator('.attachment-row a').last().click();const [popup,response]=await Promise.all([popupPromise,responsePromise]);expect(response.status()).toBe(200);expect(response.headers()['content-type']).toContain('application/pdf');await expect(popup.locator('body')).toBeVisible();await popup.close();
+  await verifyAttachmentLink(page,context,page.locator('.attachment-row a').last());
 }
 
 test('saved and posted journal keeps PDF attachments and append-only notes after refresh',async({page,context})=>{
@@ -21,7 +30,7 @@ test('saved and posted journal keeps PDF attachments and append-only notes after
   await rows.nth(0).locator('.dr').fill('42');await rows.nth(1).locator('.cr').fill('42');await page.locator('#jdesc').fill('Attachment and notes browser verification');await page.locator('#saveDoc').click();
   await expect(page).toHaveURL(/\/finance\/journal\/JE\d+$/);const jeNumber=page.url().split('/').pop();
   await page.locator('#attachmentsButton').click();await page.locator('#attachmentFile').setInputFiles(fixture);await expect(page.locator('.attachment-row')).toContainText('supporting-document.pdf');
-  const popupPromise=context.waitForEvent('page'),pdfResponse=page.waitForResponse(value=>/\/api\/attachments\/ATT-.+\/file$/.test(value.url()));await page.locator('.attachment-row a').click();const [popup,response]=await Promise.all([popupPromise,pdfResponse]);expect(response.status()).toBe(200);expect(response.headers()['content-type']).toContain('application/pdf');await expect(popup.locator('embed,iframe,body')).toBeVisible();await popup.close();
+  await verifyAttachmentLink(page,context,page.locator('.attachment-row a').first());
   await page.bringToFront();await page.locator('#notesButton').click();await page.locator('#addNoteButton').click();await page.locator('#noteText').fill('Waiting for supporting invoice.');await page.locator('#saveNote').click();await expect(page.locator('#notesButton')).toContainText('Notes 1');await expect(page.locator('.journal-note')).toContainText('Waiting for supporting invoice.');
   await page.reload();await expect(page.locator('#attachmentsButton')).toContainText('Attachments 1');await expect(page.locator('#notesButton')).toContainText('Notes 1');
   await page.locator('#jePost').click();await expect(page.locator("input[value='Posted']")).toBeVisible();await page.locator('#attachmentsButton').click();await expect(page.locator('.attachment-row')).toContainText('supporting-document.pdf');
