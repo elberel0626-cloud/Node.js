@@ -13,10 +13,10 @@ const browserFailures=page=>{const failures=[];page.on('pageerror',error=>failur
 async function verifyAttachmentLink(page,context,link){
   const href=await link.getAttribute('href');
   expect(href).toMatch(/^\/api\/attachments\/ATT-.+\/file$/);
-  const probe=await page.evaluate(async href=>{const response=await fetch(href);const bytes=await response.arrayBuffer();return{status:response.status,type:response.headers.get('content-type')||'',size:bytes.byteLength};},href);
+  const probe=await page.evaluate(async href=>{const response=await fetch(href,{credentials:'same-origin',cache:'no-store'});const bytes=await response.arrayBuffer();return{status:response.status,type:response.headers.get('content-type')||'',size:bytes.byteLength};},href);
   expect(probe.status).toBe(200);expect(probe.type).toContain('application/pdf');expect(probe.size).toBeGreaterThan(20);
   const popupPromise=context.waitForEvent('page');await link.click();const popup=await popupPromise;
-  await expect.poll(()=>{try{return new URL(popup.url()).pathname;}catch{return'';}}).toBe(href);
+  await expect.poll(()=>popup.url(),{message:'attachment viewer should replace its temporary blank page with a PDF blob URL'}).toMatch(/^blob:/);
   await popup.close();
 }
 
