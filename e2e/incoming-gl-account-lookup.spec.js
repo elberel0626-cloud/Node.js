@@ -31,16 +31,30 @@ test('incoming document verification GL account lookup searches code and name', 
 
   await openView(page, `/ap/incoming-documents/${documentId}/review`, '#invoiceReviewForm');
   const accountInput = page.locator("input[data-line-field='glAccountSuggestion']").first();
+  const suggestionRows = page.locator('.incoming-gl-account-suggestions .erp-lookup-row');
   await expect(accountInput).toBeVisible();
 
+  // The existing suggestion may be auto-populated, but focusing the field must still
+  // open the complete selectable GL list so the user can replace it.
+  await accountInput.focus();
+  await expect(suggestionRows.first()).toBeVisible();
+
+  // Substring search is intentionally not prefix-only. Typing "1" must return
+  // accounts whose code or name contains 1 anywhere in the value.
+  await accountInput.fill('1');
+  await expect(suggestionRows.first()).toBeVisible();
+  const containsOneResults = await suggestionRows.allTextContents();
+  expect(containsOneResults.length).toBeGreaterThan(0);
+  for (const text of containsOneResults) expect(text.toLowerCase()).toContain('1');
+
   await accountInput.fill(account.accountNumber);
-  let suggestion = page.locator('.incoming-gl-account-suggestions .erp-lookup-row').filter({ hasText: account.accountTitle }).first();
+  let suggestion = suggestionRows.filter({ hasText: account.accountTitle }).first();
   await expect(suggestion).toBeVisible();
   await expect(suggestion.locator('.erp-lookup-id')).toHaveText(account.accountNumber);
   await expect(suggestion.locator('.erp-lookup-name')).toHaveText(account.accountTitle);
 
   await accountInput.fill(account.accountTitle);
-  suggestion = page.locator('.incoming-gl-account-suggestions .erp-lookup-row').filter({ hasText: account.accountNumber }).first();
+  suggestion = suggestionRows.filter({ hasText: account.accountNumber }).first();
   await expect(suggestion).toBeVisible();
   await suggestion.click();
   await expect(accountInput).toHaveValue(account.accountNumber);
