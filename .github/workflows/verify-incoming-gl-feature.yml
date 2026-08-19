@@ -1,0 +1,28 @@
+name: Verify Incoming GL Lookup Feature
+
+on:
+  pull_request:
+    branches: [Development]
+
+jobs:
+  verify-incoming-gl-feature:
+    if: github.head_ref == 'feature/incoming-gl-account-lookup-classification'
+    runs-on: ubuntu-latest
+    env:
+      E2E_ADMIN_EMAIL: erpcheck@example.invalid
+      E2E_ADMIN_PASSWORD: Correct-Horse-7-Battery!
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Syntax checks
+        run: npm run check
+      - name: Targeted accounting unit tests
+        run: node --test test/accountStatementClassification.test.js test/chartOfAccounts.test.js test/financialReporting.test.js
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Incoming document GL lookup browser test
+        run: npx playwright test e2e/incoming-gl-account-lookup.spec.js --workers=1 --reporter=line

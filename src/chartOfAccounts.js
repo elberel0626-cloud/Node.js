@@ -1,3 +1,5 @@
+import { financialStatementForAccount } from './accountStatementClassification.js';
+
 export const ACCOUNT_TYPES=['Asset','Liability','Equity','Revenue','Expense','Asset/Liability','Income/Expense'];
 
 const CODE_PATTERN=/^[A-Za-z0-9][A-Za-z0-9._-]{0,29}$/;
@@ -26,7 +28,7 @@ export function normalizeAccount(input,existing){
   if(!name)throw new Error(`Account name is required for account ${code}.`);
   if(!ACCOUNT_TYPES.includes(accountType))throw new Error(`Select a valid account type for account ${code}.`);
   const normal=['Liability','Equity','Revenue'].includes(accountType)?'Credit':['Asset','Expense'].includes(accountType)?'Debit':existing?.normal||'Debit';
-  return{code,name,accountType,normal,active:input.active!==false,allowManualJournalEntry:input.allowManualJournalEntry!==false,balance:Number(existing?.balance||0),debits:Number(existing?.debits||0),credits:Number(existing?.credits||0),financialStatement:input.financialStatement??existing?.financialStatement??'',reportGroup:input.reportGroup??existing?.reportGroup??'',reportSubgroup:input.reportSubgroup??existing?.reportSubgroup??'',cashFlowClass:input.cashFlowClass??existing?.cashFlowClass??'None',cashEquivalent:input.cashEquivalent??existing?.cashEquivalent??false,retainedEarnings:input.retainedEarnings??existing?.retainedEarnings??false,distribution:input.distribution??existing?.distribution??false};
+  return{code,name,accountType,normal,active:input.active!==false,allowManualJournalEntry:input.allowManualJournalEntry!==false,balance:Number(existing?.balance||0),debits:Number(existing?.debits||0),credits:Number(existing?.credits||0),financialStatement:financialStatementForAccount(code),reportGroup:input.reportGroup??existing?.reportGroup??'',reportSubgroup:input.reportSubgroup??existing?.reportSubgroup??'',cashFlowClass:input.cashFlowClass??existing?.cashFlowClass??'None',cashEquivalent:input.cashEquivalent??existing?.cashEquivalent??false,retainedEarnings:input.retainedEarnings??existing?.retainedEarnings??false,distribution:input.distribution??existing?.distribution??false};
 }
 
 export function buildChartChangeSet(current,payload,usageFor){
@@ -66,4 +68,3 @@ export function chartAudit(changeSet,{user='system',timestamp=new Date().toISOSt
   for(const {existing} of changeSet.removals)add('Account Removed',existing.code,existing,null);
   return records;
 }
-
