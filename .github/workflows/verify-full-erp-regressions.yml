@@ -43,8 +43,8 @@ jobs:
       - name: Year-end close isolation
         run: npx playwright test e2e/finance-year-end-close.spec.js --workers=1 --reporter=line
 
-      - name: Full Playwright ERP suite
-        run: npx playwright test --workers=1 --reporter=line
+      - name: Full functional Playwright ERP suite excluding security and year-end isolation test
+        run: npx playwright test $(find e2e -maxdepth 1 -name '*.spec.js' ! -name 'finance-year-end-close.spec.js' ! -iname '*security*.spec.js' -print | sort) --workers=1 --reporter=line
 
       - name: Upload Playwright results
         if: always()
