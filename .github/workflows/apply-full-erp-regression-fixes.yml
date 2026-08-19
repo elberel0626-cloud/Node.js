@@ -1,0 +1,47 @@
+name: Apply Full ERP Regression Fixes
+
+on:
+  pull_request:
+    branches: [Development]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-regression-fixes:
+    if: github.head_ref == 'fix/full-erp-accounting-regressions'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply exact regression repairs
+        run: node tools/apply-full-erp-regression-fixes.mjs
+
+      - name: Syntax check repaired source
+        run: npm run check
+
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/server.js src/security.js public/app.js
+          git commit -m "Fix ERP accounting and browser regressions"
+          git push origin HEAD:${{ github.head_ref }}
