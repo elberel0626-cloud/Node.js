@@ -36,7 +36,7 @@ jobs:
         run: npm test
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Full Playwright ERP suite
         run: npx playwright test --workers=1 --reporter=line
