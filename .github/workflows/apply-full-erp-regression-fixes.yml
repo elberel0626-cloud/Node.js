@@ -28,12 +28,14 @@ jobs:
         run: npm ci
 
       - name: Apply exact regression repairs
-        run: node tools/apply-full-erp-regression-fixes.mjs
+        run: |
+          node tools/apply-full-erp-regression-fixes.mjs
+          node tools/patch-existing-regression-tests.mjs
 
       - name: Syntax check repaired source
         run: npm run check
 
-      - name: Commit repaired source
+      - name: Commit repaired source and regression tests
         shell: bash
         run: |
           if git diff --quiet; then
@@ -42,6 +44,6 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/server.js src/security.js public/app.js
+          git add src/server.js src/security.js public/app.js e2e/finance-drilldowns.spec.js
           git commit -m "Fix ERP accounting and browser regressions"
           git push origin HEAD:${{ github.head_ref }}
