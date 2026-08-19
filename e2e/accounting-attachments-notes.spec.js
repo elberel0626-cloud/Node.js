@@ -15,7 +15,9 @@ async function verifyAttachmentLink(page,context,link){
   expect(href).toMatch(/^\/api\/attachments\/ATT-.+\/file$/);
   const probe=await page.evaluate(async href=>{const response=await fetch(href);const bytes=await response.arrayBuffer();return{status:response.status,type:response.headers.get('content-type')||'',size:bytes.byteLength};},href);
   expect(probe.status).toBe(200);expect(probe.type).toContain('application/pdf');expect(probe.size).toBeGreaterThan(20);
-  const popupPromise=context.waitForEvent('page');await link.click();const popup=await popupPromise;await popup.waitForLoadState('domcontentloaded');expect(new URL(popup.url()).pathname).toBe(href);await popup.close();
+  const popupPromise=context.waitForEvent('page');await link.click();const popup=await popupPromise;
+  await expect.poll(()=>{try{return new URL(popup.url()).pathname;}catch{return'';}}).toBe(href);
+  await popup.close();
 }
 
 async function uploadRefreshAndOpen(page,context){
