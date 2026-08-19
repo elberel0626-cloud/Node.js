@@ -13,15 +13,14 @@ for (const [listUrl, gridId, detailPrefix] of cases) {
   test(`${listUrl} owns its record navigation context`, async ({ page }) => {
     await openView(page, listUrl, `#${gridId}`);
     const links = page.locator(`#${gridId} a[href^='${detailPrefix}']`);
-    const count = await links.count();
-    test.skip(count < 2, `Seed data has fewer than two records in ${listUrl}`);
+    const hrefs = await links.evaluateAll(nodes => [...new Set(nodes.map(node => node.getAttribute('href')).filter(Boolean))]);
+    test.skip(hrefs.length < 2, `Seed data has fewer than two records in ${listUrl}`);
 
-    const first = await links.nth(0).getAttribute('href');
-    const second = await links.nth(1).getAttribute('href');
+    const [first, second] = hrefs;
     expect(first).toBeTruthy();
     expect(second).toBeTruthy();
 
-    await links.nth(1).click();
+    await page.locator(`#${gridId} a[href='${second}']`).first().click();
     await expect(page).toHaveURL(new RegExp(`${second.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
     await expect(page.locator('#prevRec')).toBeVisible();
     await expect(page.locator('#prevRec')).toBeEnabled();
