@@ -1,0 +1,58 @@
+name: Verify Full ERP Regressions
+
+on:
+  pull_request:
+    branches: [Development]
+
+permissions:
+  contents: read
+
+jobs:
+  full-regression-verification:
+    if: github.head_ref == 'fix/full-erp-accounting-regressions'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      E2E_ADMIN_EMAIL: e2e.regression@example.invalid
+      E2E_ADMIN_PASSWORD: ERP-Regression-Only-2026!
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Functional unit tests excluding security suite
+        run: node --test $(find test -maxdepth 1 -name '*.test.js' ! -name 'security.test.js' -print | sort)
+
+      - name: Install Chromium
+        run: npx playwright install chromium
+
+      - name: Focused repaired workflows
+        run: npx playwright test e2e/accounting-lifecycle-regression.spec.js e2e/accounting-attachments-notes.spec.js e2e/ap-payment-vendor-documents.spec.js e2e/finance-drilldowns.spec.js e2e/financial-reporting.spec.js e2e/record-navigation.spec.js e2e/responsive-layout.spec.js --workers=1 --reporter=line
+
+      - name: Year-end close isolation
+        run: npx playwright test e2e/finance-year-end-close.spec.js --workers=1 --reporter=line
+
+      - name: Full functional Playwright ERP suite excluding security and year-end isolation test
+        run: npx playwright test $(find e2e -maxdepth 1 -name '*.spec.js' ! -name 'finance-year-end-close.spec.js' ! -iname '*security*.spec.js' -print | sort) --workers=1 --reporter=line
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-erp-regression-results
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 7
