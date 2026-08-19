@@ -1,7 +1,6 @@
 import { test, expect, openView } from './fixtures/authenticated.js';
 
-const targetAccount = '1000';
-const offsetAccount = '1100';
+const PLACEHOLDER_ACCOUNTS=new Set(['Cash','AR','AP','Revenue','Expense','1000','1100','4000','4050','5000']);
 
 function captureBrowserErrors(page) {
   const errors = [];
@@ -11,9 +10,18 @@ function captureBrowserErrors(page) {
   return errors;
 }
 
+async function controlledAccounts(page){
+  return page.evaluate(blocked=>fetch('/api/finance/chart-of-accounts').then(response=>response.json()).then(accounts=>{
+    const excluded=new Set(blocked),usable=accounts.filter(account=>account.active!==false&&account.allowManualJournalEntry!==false&&!excluded.has(String(account.accountNumber||'')));
+    if(usable.length<2)throw new Error('The imported Chart of Accounts does not contain two active manual-posting accounts for the controlled drilldown test.');
+    return{targetAccount:String(usable[0].accountNumber),offsetAccount:String(usable[1].accountNumber)};
+  }),[...PLACEHOLDER_ACCOUNTS]);
+}
+
 async function ensureControlledPostedActivity(page) {
+  const accounts=await controlledAccounts(page);
   await page.evaluate(async ({ targetAccount, offsetAccount }) => {
-    const marker = 'E2E annual GL drilldown';
+    const marker = `E2E annual GL drilldown ${targetAccount}`;
     const existing = await (await fetch('/api/finance/journal-transactions')).json();
     if (existing.some(journal => journal.description === marker + ' 2025 debit')) return;
     const entries = [
@@ -42,7 +50,8 @@ async function ensureControlledPostedActivity(page) {
       });
       if (!response.ok) throw new Error(await response.text());
     }
-  }, { targetAccount, offsetAccount });
+  }, accounts);
+  return accounts;
 }
 
 async function clickAndExpectDetails(page, link, account, expectedParams) {
@@ -76,7 +85,7 @@ test('Trial Balance is a Finance report and Journal Transactions remains working
 test('annual Chart of Accounts reports posted activity and restores year and grid state', async ({ page }) => {
   const browserErrors = captureBrowserErrors(page);
   await openView(page, '/finance', '#view');
-  await ensureControlledPostedActivity(page);
+  const {targetAccount}=await ensureControlledPostedActivity(page);
   await openView(page, '/finance/chart-of-accounts?year=2026', '#coaGrid');
   await expect(page.locator('#coaYear')).toHaveValue('2026');
   for (const key of ['beginningBalance', 'debitActivity', 'creditActivity', 'endingBalance']) await expect(page.locator(`#coaGrid th[data-k='${key}']`)).toBeVisible();
@@ -90,7 +99,7 @@ test('annual Chart of Accounts reports posted activity and restores year and gri
   const popupPromise = page.context().waitForEvent('page');
   await row.locator("td[data-k='accountNumber'] a").click({ modifiers: ['Control'] });
   const popup = await popupPromise; await popup.waitForLoadState('domcontentloaded');
-  await expect(popup).toHaveURL(/\/finance\/account-details\/1000\?/); await popup.close();
+  await expect(popup).toHaveURL(new RegExp(`/finance/account-details/${encodeURIComponent(targetAccount)}\\?`)); await popup.close();
   await clickAndExpectDetails(page, row.locator("td[data-k='debitActivity'] a"), targetAccount, { activity: 'debit', origin: 'chart-of-accounts', year: '2026' });
   await page.locator('#accountDetailsBack').click();
   await clickAndExpectDetails(page, row.locator("td[data-k='creditActivity'] a"), targetAccount, { activity: 'credit', origin: 'chart-of-accounts', year: '2026' });
@@ -98,9 +107,10 @@ test('annual Chart of Accounts reports posted activity and restores year and gri
   await clickAndExpectDetails(page, row.locator("td[data-k='endingBalance'] a"), targetAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2026' });
   await page.locator('#accountDetailsBack').click();
   await page.locator('#coaYear').selectOption('2025'); await expect(page).toHaveURL(/year=2025/);
-  const annual = await page.evaluate(async () => Promise.all(['2025','2026'].map(async year => (await (await fetch('/api/finance/chart-of-accounts/annual?year='+year)).json()).rows.find(row => row.accountNumber === '1000').debitActivity)));
+  const annual = await page.evaluate(async account => Promise.all(['2025','2026'].map(async year => (await (await fetch('/api/finance/chart-of-accounts/annual?year='+year)).json()).rows.find(row => row.accountNumber === account).debitActivity)),targetAccount);
   expect(annual[0]).not.toBe(annual[1]);
-  const emptyAccount = await page.evaluate(async () => (await (await fetch('/api/finance/chart-of-accounts/annual?year=2025')).json()).rows.find(row => !row.hasActivity && row.endingBalance === 0).accountNumber);
+  const emptyAccount = await page.evaluate(async () => (await (await fetch('/api/finance/chart-of-accounts/annual?year=2025')).json()).rows.find(row => !row.hasActivity && row.endingBalance === 0)?.accountNumber||'');
+  expect(emptyAccount).toBeTruthy();
   await page.locator(".grid-search[data-grid='coaGrid']").fill(emptyAccount);
   const emptyRow = page.locator('#coaGrid tr', { hasText: emptyAccount }).filter({ has: page.locator('td') }).first();
   await clickAndExpectDetails(page, emptyRow.locator("td[data-k='endingBalance'] a"), emptyAccount, { activity: 'all', origin: 'chart-of-accounts', year: '2025' });
@@ -110,7 +120,7 @@ test('annual Chart of Accounts reports posted activity and restores year and gri
 
 test('Trial Balance activity modes filter rows after calculating full running balances', async ({ page }) => {
   const browserErrors = captureBrowserErrors(page);
-  await openView(page, '/finance', '#view'); await ensureControlledPostedActivity(page);
+  await openView(page, '/finance', '#view'); const {targetAccount}=await ensureControlledPostedActivity(page);
   await openView(page, '/finance/trial-balance?fromPeriod=2026-01&toPeriod=2026-12', '#tbGrid');
   const search = page.locator(".grid-search[data-grid='tbGrid']"); await search.fill(targetAccount);
   const row = page.locator('#tbGrid tr', { hasText: targetAccount }).filter({ has: page.locator('td') }).first();
@@ -134,25 +144,29 @@ test('Trial Balance activity modes filter rows after calculating full running ba
 });
 
 test('saved module source references retain JE and AP, AR, and Inventory routing', async ({ page }) => {
-  await page.evaluate(async () => {
-    const existing = await (await fetch('/api/ar/documents')).json();
-    if (!existing.some(document => document.posted && document.type === 'Invoice')) {
-      const response = await fetch('/api/ar/documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type:'Invoice', customerId:'CUST-1002', date:'2026-08-19', postDate:'2026-08-19', description:'Finance source routing fixture', lines:[{ itemCode:'ITEM-1001', description:'AR source route', qty:1, unitPrice:25, revenueAccount:'4008' }] })
-      });
-      if (!response.ok) throw new Error(await response.text());
-      const invoice = await response.json();
-      const posted = await fetch('/api/ar/documents/post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: invoice.id })
-      });
-      if (!posted.ok) throw new Error(await posted.text());
-    }
+  const controlledAr=await page.evaluate(async () => {
+    const tag=Date.now().toString().slice(-8);
+    const response=await fetch('/api/ar/documents', {
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({type:'Invoice',customerId:'CUST-1002',date:'2026-08-19',postDate:'2026-08-19',invoiceNumber:`AR-ROUTE-${tag}`,description:'Finance source routing fixture',amount:25,lines:[{itemCode:'ITEM-1001',description:'AR source route',qty:1,unitPrice:25,revenueAccount:'4008'}]})
+    });
+    if(!response.ok)throw new Error(await response.text());
+    const invoice=await response.json();
+    const posted=await fetch('/api/ar/documents/post',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:invoice.id})});
+    if(!posted.ok)throw new Error(await posted.text());
+    const journals=await(await fetch('/api/finance/journal-transactions')).json();
+    const journal=journals.find(entry=>entry.sourceRef===invoice.id&&String(entry.module).toUpperCase()==='AR'&&!entry.reversalOf);
+    if(!journal)throw new Error('Controlled AR invoice did not create an AR journal.');
+    const account=journal.lines.find(line=>Number(line.debit||0)>0)?.account||journal.lines[0]?.account;
+    const details=await(await fetch(`/api/finance/account-details/${encodeURIComponent(account)}`)).json();
+    const source=details.activityRows.find(row=>row.jeReference===journal.jeNumber&&row.sourceReference===invoice.id);
+    if(!source)throw new Error('Controlled AR journal was not found in Account Details.');
+    return{accountNumber:account,source};
   });
-  const targets = await page.evaluate(async () => { const report=await(await fetch('/api/finance/trial-balance')).json(),found={}; for(const row of report.rows){const details=await(await fetch(`/api/finance/account-details/${encodeURIComponent(row.accountNumber)}`)).json();for(const source of details.activityRows){const module=String(source.sourceModule).toUpperCase();if(source.sourceHref&&['AP','AR','INVENTORY'].includes(module)&&!found[module])found[module]={accountNumber:row.accountNumber,source};}}return found; });
+  expect(String(controlledAr.source.sourceModule).toUpperCase()).toBe('AR');
+  expect(controlledAr.source.sourceHref).toMatch(/^\/ar\/doc\//);
+  const targets = await page.evaluate(async () => { const report=await(await fetch('/api/finance/trial-balance')).json(),found={}; for(const row of report.rows){const details=await(await fetch(`/api/finance/account-details/${encodeURIComponent(row.accountNumber)}`)).json();for(const source of details.activityRows){const module=String(source.sourceModule).toUpperCase();if(source.sourceHref&&['AP','INVENTORY'].includes(module)&&!found[module])found[module]={accountNumber:row.accountNumber,source};}}return found; });
+  targets.AR=controlledAr;
   expect(Object.keys(targets).sort()).toEqual(['AP','AR','INVENTORY']);
   for (const target of Object.values(targets)) { await openView(page, `/finance/account-details/${encodeURIComponent(target.accountNumber)}`, '#acctDtlGrid'); const row=page.locator('#acctDtlGrid tr',{hasText:target.source.jeReference}).filter({has:page.locator(`a[href='${target.source.sourceHref}']`)}).first(); await row.locator("td[data-k='jeLink'] a").click(); await expect(page).toHaveURL(new RegExp(`/finance/journal/${encodeURIComponent(target.source.jeReference)}$`)); }
 });
