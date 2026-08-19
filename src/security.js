@@ -64,23 +64,36 @@ export class SecurityService {
     const production=process.env.NODE_ENV==='production';
     const email=String(process.env.BOOTSTRAP_ADMIN_EMAIL||'').trim().toLowerCase();
     const password=String(process.env.BOOTSTRAP_ADMIN_PASSWORD||'');
-    const resetRequested=String(process.env.RESET_BOOTSTRAP_ADMIN_PASSWORD||'').toLowerCase()==='true';
+    const resetRequested=String(process.env.RESET_BOOTSTRAP_ADMIN_PASSWORD||'').trim().toLowerCase()==='true';
     const validEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    const validCredentials=!!email&&!!password&&validEmail&&password.length>=14&&!/^(admin|password|changeme|123456)/i.test(password)&&!password.toLowerCase().includes(email.split('@')[0]);
+    const validBootstrapCredentials=!!email&&!!password&&validEmail&&password.length>=14&&!/^(admin|password|changeme|123456)/i.test(password)&&!password.toLowerCase().includes(email.split('@')[0]);
+    const validRecoveryCredentials=!!email&&!!password&&validEmail&&password.length>=8;
 
     if(resetRequested){
-      if(!validCredentials) throw new Error('Admin recovery credentials do not meet security requirements');
-      const admin=this.store.users.find(u=>String(u.email||'').toLowerCase()===email&&(u.roles||[]).includes('Admin'));
-      if(!admin) throw new Error('RESET_BOOTSTRAP_ADMIN_PASSWORD was requested but no matching Admin user exists');
+      if(!validRecoveryCredentials) throw new Error('Admin recovery requires a valid email and a password with at least 8 characters');
       const { hash } = await import('argon2');
-      admin.passwordHash=await hash(password,{type:2,memoryCost:19456,timeCost:2,parallelism:1});
-      admin.active=true;
-      admin.mustChangePassword=false;
+      const passwordHash=await hash(password,{type:2,memoryCost:19456,timeCost:2,parallelism:1});
+      let admin=this.store.users.find(u=>String(u.email||'').trim().toLowerCase()===email);
+      const created=!admin;
+      if(!admin){
+        admin={id:crypto.randomUUID(),email,name:'Bootstrap Administrator',passwordHash,roles:['Admin'],active:true,mustChangePassword:false,companies:['*'],branches:['*'],departments:['*'],createdAt:nowIso()};
+        this.store.users.push(admin);
+      } else {
+        admin.email=email;
+        admin.passwordHash=passwordHash;
+        admin.roles=Array.from(new Set([...(admin.roles||[]),'Admin']));
+        admin.active=true;
+        admin.mustChangePassword=false;
+        admin.companies=admin.companies?.length?admin.companies:['*'];
+        admin.branches=admin.branches?.length?admin.branches:['*'];
+        admin.departments=admin.departments?.length?admin.departments:['*'];
+      }
       admin.passwordResetAt=nowIso();
       for(const session of this.store.sessions) if(session.userId===admin.id&&!session.revokedAt) session.revokedAt=nowIso();
       await this.store.saveUsers();
       await this.store.saveSessions();
-      await this.store.audit({eventId:crypto.randomUUID(),timestamp:nowIso(),requestId:null,userId:admin.id,sessionIdHash:null,action:'BOOTSTRAP_ADMIN_PASSWORD_RESET',entityType:'User',entityId:admin.id,result:'success',reason:'Explicit environment recovery flag',sourceIp:'startup',userAgent:'server-startup',metadata:{emailHash:crypto.createHash('sha256').update(email).digest('hex')}});
+      await this.store.audit({eventId:crypto.randomUUID(),timestamp:nowIso(),requestId:null,userId:admin.id,sessionIdHash:null,action:created?'BOOTSTRAP_ADMIN_RECOVERED':'BOOTSTRAP_ADMIN_PASSWORD_RESET',entityType:'User',entityId:admin.id,result:'success',reason:'Explicit environment recovery flag',sourceIp:'startup',userAgent:'server-startup',metadata:{created,emailHash:crypto.createHash('sha256').update(email).digest('hex')}});
+      console.log(`[admin-recovery] ${created?'created':'reset'} configured bootstrap administrator`);
       return;
     }
 
@@ -88,7 +101,7 @@ export class SecurityService {
     if(admins.length) return;
     if(production&&process.env.ALLOW_PRODUCTION_BOOTSTRAP!=='true') throw new Error('Production requires an existing administrator or explicitly enabled secure bootstrap configuration');
     if(!email&&!password) { if(production) throw new Error('Production bootstrap credentials are required'); return; }
-    if(!validCredentials) throw new Error('Bootstrap administrator credentials do not meet security requirements');
+    if(!validBootstrapCredentials) throw new Error('Bootstrap administrator credentials do not meet security requirements');
     const { hash } = await import('argon2');
     const passwordHash=await hash(password,{type:2,memoryCost:19456,timeCost:2,parallelism:1});
     this.store.users.push({id:crypto.randomUUID(),email,name:'Bootstrap Administrator',passwordHash,roles:['Admin'],active:true,mustChangePassword:false,companies:['*'],branches:['*'],departments:['*'],createdAt:nowIso()});
