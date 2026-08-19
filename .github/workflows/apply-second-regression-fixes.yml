@@ -1,0 +1,31 @@
+name: Apply Second ERP Regression Fixes
+
+on:
+  pull_request:
+    branches: [Development]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-second-pass:
+    if: github.head_ref == 'fix/full-erp-accounting-regressions'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node tools/apply-second-regression-fixes.mjs
+      - run: npm run check
+      - name: Commit product repairs
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app.js
+          git commit -m "Fix lookup, popup, and report download routing"
+          git push origin HEAD:${{ github.head_ref }}
