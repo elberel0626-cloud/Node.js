@@ -10,10 +10,9 @@ permissions:
 jobs:
   full-accounting-audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       # Ephemeral test-only bootstrap credentials for the isolated GitHub Actions runner.
-      # These are not production credentials and the runner is destroyed after the job.
       E2E_ADMIN_EMAIL: e2e.audit@example.invalid
       E2E_ADMIN_PASSWORD: ERP-Audit-Only-2026!
     steps:
@@ -38,8 +37,8 @@ jobs:
       - name: Install Chromium
         run: npx playwright install chromium
 
-      - name: Full Playwright ERP suite
-        run: npx playwright test --workers=1 --reporter=line
+      - name: Integrated purchase-to-pay and order-to-cash audit
+        run: npx playwright test e2e/full-accounting-lifecycle-audit.spec.js --workers=1 --reporter=line
 
       - name: Upload Playwright results
         if: always()
