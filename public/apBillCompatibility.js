@@ -108,4 +108,54 @@ var setVendorActions = function setVendorActions() {
     panelIds.forEach(id => workspace.querySelector(`#${id}`)?.classList.add('hidden'));
     target.classList.remove('hidden');
   }, true);
+
+  // The local party lookup is intentionally debounced in app.js. Hide its
+  // previous rows immediately while the user types so a fast click can never
+  // select a stale vendor before the filtered results are rendered.
+  document.addEventListener('input', event => {
+    if (!['pVendorNumber', 'pVendorName'].includes(event.target?.id)) return;
+    document.querySelectorAll('.party-suggestions').forEach(panel => panel.classList.add('hidden'));
+  }, true);
+
+  // Supporting PDFs are protected by the authenticated session. A direct
+  // target=_blank navigation can lose that request context in some browsers.
+  // Fetch the PDF from the authenticated ERP page, then open a browser blob URL.
+  document.addEventListener('click', async event => {
+    const link = event.target?.closest?.('#accountingAttachments .attachment-row a[href^="/api/attachments/"][href$="/file"]');
+    if (!link) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const popup = window.open('about:blank', '_blank');
+    if (!popup) {
+      window.alert('Allow pop-ups for this ERP to view PDF attachments.');
+      return;
+    }
+
+    try {
+      popup.document.title = 'Opening PDF';
+      popup.document.body.textContent = 'Loading PDF…';
+
+      const response = await fetch(link.getAttribute('href'), {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      if (!response.ok) throw new Error(`PDF could not be opened (${response.status}).`);
+
+      const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+      if (!contentType.includes('application/pdf')) {
+        throw new Error('The attachment response was not a PDF.');
+      }
+
+      const pdfBlob = await response.blob();
+      const objectUrl = URL.createObjectURL(pdfBlob);
+      popup.opener = null;
+      popup.location.href = objectUrl;
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (error) {
+      popup.close();
+      window.alert(error?.message || 'The PDF attachment could not be opened.');
+    }
+  }, true);
 })();
