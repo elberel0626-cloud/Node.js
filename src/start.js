@@ -10,6 +10,7 @@ import { preparePurchaseOrderPreferencesServer } from './purchaseOrderPreference
 import { preparePurchaseOrderReportingServer } from './purchaseOrderReportingPatch.js';
 import { prepareApIncomingConversionServer } from './apIncomingConversionPatch.js';
 import { prepareIncomingReviewSaveServer } from './incomingReviewSavePatch.js';
+import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.js';
 
 async function makePoPreferencesRuntimeInitializationSafe(modulePath){
   const moduleUrl=new URL(modulePath,import.meta.url);
@@ -34,7 +35,8 @@ await makePoPreferencesRuntimeInitializationSafe(poPreferencesServerModule);
 const poReportingServerModule = await preparePurchaseOrderReportingServer(poPreferencesServerModule);
 const apIncomingConversionServerModule = await prepareApIncomingConversionServer(poReportingServerModule);
 const incomingReviewSaveServerModule = await prepareIncomingReviewSaveServer(apIncomingConversionServerModule);
-const incomingReviewSaveServerUrl = new URL(incomingReviewSaveServerModule, import.meta.url);
-execFileSync(process.execPath, ['--check', fileURLToPath(incomingReviewSaveServerUrl)], { stdio: 'inherit' });
-await import(incomingReviewSaveServerModule);
+const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer(incomingReviewSaveServerModule);
+const apRuntimeReliabilityServerUrl = new URL(apRuntimeReliabilityServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(apRuntimeReliabilityServerUrl)], { stdio: 'inherit' });
+await import(apRuntimeReliabilityServerModule);
 applyStatementClassification(glAccounts);
