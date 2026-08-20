@@ -1,6 +1,6 @@
 import { test, expect, openView } from './fixtures/authenticated.js';
 
-test('new AP Bill refreshes professional PO workspace whenever vendor is selected', async ({ page }) => {
+test('new AP Bill refreshes vendor POs and shows live match status plus GL detail before save', async ({ page }) => {
   await openView(page, '/ap/bills/new', '#bVendorNumber');
   await page.locator(".erp-tabs [data-tab='purchaseOrder']").click();
   const workspace=page.locator('#apPoNewV2');
@@ -22,5 +22,24 @@ test('new AP Bill refreshes professional PO workspace whenever vendor is selecte
   await row.locator('.poPickNewV2').check();
   await page.locator('#poApplyNewV2').click();
   await expect(page.locator(".ln-po[data-i='0']")).toHaveValue('PO-1002');
-  await expect(workspace).toContainText(/Save the bill|Save bill/i);
+
+  const matchStrip=page.locator('#apMatchStatusStrip');
+  await expect(matchStrip).toBeVisible();
+  await expect(page.locator('#apMatchStatusValue')).toHaveText(/Waiting for Receipt|Partially Received|Matched - Ready to Post|Price Variance - Approval Required|Approved Match Exception - Ready to Post|Match Exception/);
+  await expect(matchStrip).toContainText('Posting Control');
+  await expect(matchStrip).toContainText('Live Unsaved Preview');
+
+  const preview=page.locator('#newMatchV2 .ap-unsaved-match-table');
+  await expect(preview).toBeVisible();
+  await expect(preview).toContainText('Current 3-Way Match');
+  await expect(preview).toContainText('GL Code');
+  await expect(preview).toContainText('GL Account');
+
+  await page.locator(".erp-tabs [data-tab='billLines']").click();
+  const lineTable=page.locator('#billLines .compact-ap-lines');
+  await expect(lineTable).toBeVisible();
+  await expect(lineTable.locator('tr').first()).toContainText('GL Code');
+  await expect(lineTable.locator('tr').first()).toContainText('GL Account Description');
+  await expect(page.locator(".ln-exp[data-i='0']")).not.toHaveValue('');
+  await expect(page.locator(".ln-exp[data-i='0']").locator('xpath=following-sibling::*[contains(@class,"ap-effective-gl")]')).toBeVisible();
 });
