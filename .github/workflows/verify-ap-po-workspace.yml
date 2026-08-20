@@ -8,11 +8,13 @@ on:
       - public/apIncomingCreateBillFix.js
       - public/apProfessionalMatchingV2.js
       - public/index.html
+      - src/apInvoiceEvaluation.js
       - src/apIncomingConversionPatch.js
       - src/incomingReviewSavePatch.js
       - src/apRuntimeReliabilityPatch.js
       - src/routePermissions.js
       - src/start.js
+      - test/apInvoiceNegativeLines.test.js
       - test/apProfessionalPoWorkspace.test.js
       - test/apProfessionalMatchingV2.test.js
       - test/apIncomingConversionPatch.test.js
@@ -59,11 +61,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
+          node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
           rc=$?
           state=success
-          description='AP incoming and PO unit regressions passed'
-          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming or PO unit regression failed'; fi
+          description='AP incoming, signed invoice line, and PO unit regressions passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed invoice line, or PO unit regression failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/regression' -f description="$description" >/dev/null
           exit "$rc"
       - name: Install Chromium
@@ -80,7 +82,7 @@ jobs:
           npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'incoming review saves'
           rc=$?
           state=success
-          description='Incoming review save and AP Bill create passed'
+          description='Incoming review save and AP Bill create passed, including negative reconciliation lines'
           if [ "$rc" -ne 0 ]; then state=failure; description='Incoming review save or AP Bill create failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-incoming' -f description="$description" >/dev/null
           exit "$rc"
@@ -93,7 +95,7 @@ jobs:
           npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'eligible vendor PO lookup returns'
           rc=$?
           state=success
-          description='Eligible-only vendor PO lookup returned PO-1001'
+          description='Eligible-only vendor PO lookup returned vendor PO'
           if [ "$rc" -ne 0 ]; then state=failure; description='Eligible-only vendor PO lookup failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-po-api' -f description="$description" >/dev/null
           exit "$rc"
