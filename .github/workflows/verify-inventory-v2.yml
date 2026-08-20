@@ -4,9 +4,12 @@ on:
   pull_request:
     branches: [Development]
     paths:
+      - 'src/server.js'
       - 'public/inventoryV2.js'
+      - 'public/inventoryV2Bootstrap.js'
       - 'public/inventoryV2.css'
       - 'public/index.html'
+      - 'e2e/inventory-router-ownership.spec.js'
       - 'e2e/inventory-v2.spec.js'
       - '.github/workflows/verify-inventory-v2.yml'
 
@@ -32,9 +35,14 @@ jobs:
         run: npm ci
       - name: Syntax checks
         run: |
+          node --check src/server.js
           node --check public/inventoryV2.js
+          node --check public/inventoryV2Bootstrap.js
+          node --check e2e/inventory-router-ownership.spec.js
           node --check e2e/inventory-v2.spec.js
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
-      - name: Run Inventory lifecycle test
+      - name: Verify Inventory owns its routes
+        run: npx playwright test e2e/inventory-router-ownership.spec.js --workers=1 --reporter=line
+      - name: Run full Inventory lifecycle test
         run: npx playwright test e2e/inventory-v2.spec.js --workers=1 --reporter=line
