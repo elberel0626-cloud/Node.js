@@ -27,20 +27,28 @@ async function createPoLinkedBill(page){
   return{bill:created.body,po};
 }
 
+async function clickBillsFromIncoming(page){
+  await openView(page,'/ap/incoming-documents','#view');
+  const billsNav=page.locator("#ar-nav a[href='/ap/bills']");
+  await expect(billsNav).toBeVisible();
+  await billsNav.click();
+  await expect(page).toHaveURL(/\/ap\/bills$/);
+}
+
 test('running AP Bills list API returns serialized bills successfully',async({page})=>{
   const result=await request(page,'/api/ap/documents?type=Bill');
   expect(result.status,result.text).toBe(200);
   expect(Array.isArray(result.body)).toBe(true);
 });
 
-test('AP sidebar navigation actually replaces the screen with Bills and Adjustments',async({page})=>{
-  await openView(page,'/ap/incoming-documents','#view');
-  const billsNav=page.locator("#ar-nav a[href='/ap/bills']");
-  await expect(billsNav).toBeVisible();
-  await billsNav.click();
-  await expect(page).toHaveURL(/\/ap\/bills$/);
+test('AP Bills navigation renders the Bills and Adjustments screen after sidebar click',async({page})=>{
+  await clickBillsFromIncoming(page);
   await expect(page.locator('#apBillGrid')).toBeVisible();
   await expect(page.locator('#view .header-row h3')).toHaveText('Bills and Adjustments');
+});
+
+test('AP Bills navigation moves the active sidebar selection to Bills and Adjustments',async({page})=>{
+  await clickBillsFromIncoming(page);
   await expect(page.locator("#ar-nav a[href='/ap/bills']")).toHaveClass(/active/);
   await expect(page.locator("#ar-nav a[href='/ap/incoming-documents']")).not.toHaveClass(/active/);
 });
