@@ -1,0 +1,40 @@
+name: Verify Inventory V2
+
+on:
+  pull_request:
+    branches: [Development]
+    paths:
+      - 'public/inventoryV2.js'
+      - 'public/inventoryV2.css'
+      - 'public/index.html'
+      - 'e2e/inventory-v2.spec.js'
+      - '.github/workflows/verify-inventory-v2.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      E2E_ADMIN_EMAIL: inventory.v2@example.invalid
+      E2E_ADMIN_PASSWORD: Inventory-V2-Test-2026!
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax checks
+        run: |
+          node --check public/inventoryV2.js
+          node --check e2e/inventory-v2.spec.js
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run Inventory lifecycle test
+        run: npx playwright test e2e/inventory-v2.spec.js --workers=1 --reporter=line
