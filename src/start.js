@@ -13,6 +13,7 @@ import { prepareIncomingReviewSaveServer } from './incomingReviewSavePatch.js';
 import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.js';
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
 import { prepareFinancialReportMappingServer } from './financialReportMappingPatch.js';
+import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
 async function makePoPreferencesRuntimeInitializationSafe(modulePath){
   const moduleUrl=new URL(modulePath,import.meta.url);
@@ -30,6 +31,7 @@ async function makePoPreferencesRuntimeInitializationSafe(modulePath){
 
 normalizeSampleUnreleasedDocuments({ arDocuments, apDocuments });
 applyStatementClassification(glAccounts);
+await patchApBillsGridFile();
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
 const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(cashPurchaseServerModule);
 const poPreferencesServerModule = await preparePurchaseOrderPreferencesServer(incomingPoServerModule);
