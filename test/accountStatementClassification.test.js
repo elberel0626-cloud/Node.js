@@ -30,7 +30,7 @@ test('supplied financial statement mapping is authoritative and non-overlapping'
   }
 });
 
-test('FS, FS5, and Type map exact report placement', () => {
+test('FS, FS5, Type, and Geography map exact report placement', () => {
   assert.deepEqual(financialReportMappingForAccount('1039'), {
     accountCode:'1039', fs:'BS', statement:'BalanceSheet', accountType:'Asset', fs5:'Asset', reportGroup:'Cash', type:'Cash'
   });
@@ -39,13 +39,22 @@ test('FS, FS5, and Type map exact report placement', () => {
   assert.equal(financialReportMappingForAccount('3082').fs5, 'Equity');
   assert.equal(financialReportMappingForAccount('4008').fs5, 'Revenue');
   assert.equal(financialReportMappingForAccount('4008').reportGroup, 'SALES');
+  assert.equal(financialReportMappingForAccount('4008').reportSubgroup, 'Equipment');
+  assert.equal(financialReportMappingForAccount('4012').reportSubgroup, 'Consumables');
+  assert.equal(financialReportMappingForAccount('5110').reportGroup, 'COGS');
+  assert.equal(financialReportMappingForAccount('5110').reportSubgroup, 'Material');
+  assert.equal(financialReportMappingForAccount('5113').reportSubgroup, 'Freight - All');
   assert.equal(financialReportMappingForAccount('5111').reportGroup, 'SG&A');
+  assert.equal(financialReportMappingForAccount('5111').reportSubgroup, 'R&D Material');
   assert.equal(financialReportMappingForAccount('6031').reportGroup, 'NON EBITDA');
+  assert.equal(financialReportMappingForAccount('6031').reportSubgroup, 'Amortization');
 });
 
-test('duplicate source account codes resolve to their one consistent mapping', () => {
-  assert.equal(financialReportMappingForAccount('1516').reportGroup, 'Inventory - Net');
-  assert.equal(financialReportMappingForAccount('2615').reportGroup, 'General Liability - ST');
+test('duplicate source P&L rows resolve to the later authoritative mapping', () => {
+  assert.equal(financialReportMappingForAccount('6315').reportGroup, 'NON EBITDA');
+  assert.equal(financialReportMappingForAccount('6315').reportSubgroup, 'Taxes');
+  assert.equal(financialReportMappingForAccount('6610').reportGroup, 'NON EBITDA');
+  assert.equal(financialReportMappingForAccount('6610').reportSubgroup, 'Taxes');
 });
 
 test('unlisted accounts can preserve an explicit statement fallback', () => {
@@ -54,7 +63,7 @@ test('unlisted accounts can preserve an explicit statement fallback', () => {
   assert.equal(broadAccountTypeForAccount('9000', 'BalanceSheet'), 'Asset/Liability');
 });
 
-test('startup classification applies mapped statement, FS5 type, and report group', () => {
+test('startup classification applies mapped statement, FS5 type, report group, and geography', () => {
   const accounts = [
     { code:'1039', accountType:'Income/Expense', reportGroup:'Wrong' },
     { code:'2010', accountType:'Asset/Liability' },
@@ -66,8 +75,8 @@ test('startup classification applies mapped statement, FS5 type, and report grou
   assert.deepEqual(accounts, [
     { code:'1039', accountType:'Asset', reportGroup:'Cash', financialStatement:'BalanceSheet' },
     { code:'2010', accountType:'Liability', reportGroup:'Payables - Net', financialStatement:'BalanceSheet' },
-    { code:'4008', accountType:'Revenue', reportGroup:'SALES', financialStatement:'ProfitLoss' },
-    { code:'5111', accountType:'Expense', reportGroup:'SG&A', financialStatement:'ProfitLoss' },
+    { code:'4008', accountType:'Revenue', reportGroup:'SALES', reportSubgroup:'Equipment', financialStatement:'ProfitLoss' },
+    { code:'5111', accountType:'Expense', reportGroup:'SG&A', reportSubgroup:'R&D Material', financialStatement:'ProfitLoss' },
     { code:'9000', accountType:'Asset', financialStatement:'BalanceSheet' }
   ]);
 });
