@@ -13,10 +13,6 @@ export function applyApRuntimeReliabilityPatch(source){
     " if(method==='PUT'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); r.extracted=r.extracted||{}; r.vendorMatch=r.vendorMatch||{}; r.draftBill=r.draftBill||{}; r.exceptions=Array.isArray(r.exceptions)?r.exceptions:[]; r.auditTrail=Array.isArray(r.auditTrail)?r.auditTrail:[]; const b=await body(req); const before={...r.extracted};",
     'incoming review state initialization');
   source=replaceOnce(source,
-    "let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>allowed.has(p.status)||billableLinesForPo(p).length>0);",
-    "let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>!['Draft','Cancelled','Voided'].includes(p.status));",
-    'AP PO lookup includes vendor POs before receipt');
-  source=replaceOnce(source,
     "return json(res,500,{error:`The AP Bill was not created because its source PDF could not be retained: ${error.message}`});",
     "return json(res,422,{error:`The AP Bill was not created because its source PDF could not be retained: ${error.message}`,code:'INCOMING_ATTACHMENT_RETAIN_FAILED'});",
     'incoming conversion surfaces attachment error');
