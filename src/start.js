@@ -4,6 +4,7 @@ import { glAccounts, arDocuments, apDocuments } from './data/seed.js';
 import { applyStatementClassification } from './accountStatementClassification.js';
 import { normalizeSampleUnreleasedDocuments } from './sampleDataRuntime.js';
 import { prepareCashPurchaseApplicationServer } from './cashPurchaseApplicationsPatch.js';
+import { prepareIncomingPurchaseOrderWorkflowServer } from './incomingPurchaseOrderWorkflowPatch.js';
 
 // Keep built-in demonstration transactions release-ready on every startup.
 // They are sample records only; real transactions created by users are not changed.
@@ -15,7 +16,8 @@ normalizeSampleUnreleasedDocuments({ arDocuments, apDocuments });
 // statement classification is visible everywhere without rewriting history.
 applyStatementClassification(glAccounts);
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
-const cashPurchaseServerUrl = new URL(cashPurchaseServerModule, import.meta.url);
-execFileSync(process.execPath, ['--check', fileURLToPath(cashPurchaseServerUrl)], { stdio: 'inherit' });
-await import(cashPurchaseServerModule);
+const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(cashPurchaseServerModule);
+const incomingPoServerUrl = new URL(incomingPoServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(incomingPoServerUrl)], { stdio: 'inherit' });
+await import(incomingPoServerModule);
 applyStatementClassification(glAccounts);
