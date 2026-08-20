@@ -5,14 +5,39 @@ test.describe.configure({mode:'serial'});
 async function api(page,path,method='GET',body){return page.evaluate(async({path,method,body})=>{const response=await fetch(path,{method,headers:body!==undefined?{'Content-Type':'application/json'}:undefined,body:body!==undefined?JSON.stringify(body):undefined,credentials:'same-origin',cache:'no-store'}),text=await response.text();let parsed={};try{parsed=text?JSON.parse(text):{}}catch{parsed={error:text}}return{status:response.status,body:parsed};},{path,method,body});}
 async function createPoVendorBill(page){const invoice=`PO-LINK-${crypto.randomUUID()}`;const created=await api(page,'/api/ap/documents','POST',{type:'Bill',vendorId:'VEND-1002',date:'2026-08-20',dueDate:'2026-09-19',vendorRef:invoice,invoiceNumber:invoice,branch:'100',terms:'NET30',taxTotal:0,freight:0,lines:[{inventoryId:'ITEM-1007',description:'Replacement part from eligible PO',qty:1,uom:'EA',unitCost:420,discountAmount:0,expenseAccount:'5110',branch:'100'}]});expect(created.status,JSON.stringify(created.body)).toBe(201);return created.body;}
 
-test('incoming review saves with PO removed and creates AP Bill',async({page})=>{
+test('incoming review saves after stale PO is removed and creates AP Bill from the UI',async({page})=>{
   const pdf=await PDFDocument.create();pdf.addPage([300,200]);const bytes=Buffer.from(await pdf.save()),ref=`NOPO-${crypto.randomUUID()}`;
   const upload=await api(page,'/api/ap/incoming-documents','POST',{fileName:`${ref}.pdf`,mimeType:'application/pdf',fileData:`data:application/pdf;base64,${bytes.toString('base64')}`,uploadedBy:'e2e',source:'PDF Upload',deferRecognition:true});
   expect(upload.status,JSON.stringify(upload.body)).toBe(202);const id=upload.body.id;
-  const saved=await api(page,`/api/ap/incoming-documents/${id}`,'PUT',{status:'In Review',vendorMatch:{vendorId:'VEND-1001',vendorName:'Vendor 1001'},extracted:{vendorName:'Vendor 1001',invoiceNumber:ref,invoiceDate:'2026-08-20',dueDate:'2026-09-19',purchaseOrderNumber:'',poNumber:'',grossInvoiceAmount:42.5,totalAmount:42.5,lines:[{description:'No PO invoice',qty:1,unitPrice:42.5,extendedAmount:42.5,lineAmount:42.5,glAccountSuggestion:'5110',branch:'100'}]}});
-  expect(saved.status,JSON.stringify(saved.body)).toBe(200);expect(saved.body.extracted.purchaseOrderNumber).toBe('');expect(saved.body.extracted.poNumber).toBe('');
-  const created=await api(page,`/api/ap/incoming-documents/${id}/create-bill`,'POST',{overrideDuplicate:true});
-  expect(created.status,JSON.stringify(created.body)).toBe(201);expect(created.body.billId).toBeTruthy();expect(created.body.bill.lines[0].poNumber||'').toBe('');expect(created.body.bill.invoicePdfAttached).toBe(true);
+  const seeded=await api(page,`/api/ap/incoming-documents/${id}`,'PUT',{status:'In Review',vendorMatch:{vendorId:'VEND-1001',vendorName:'Vendor 1001'},extracted:{vendorName:'Vendor 1001',invoiceNumber:ref,invoiceDate:'2026-08-20',dueDate:'2026-09-19',purchaseOrderNumber:'PO-1004',poNumber:'PO-1004',grossInvoiceAmount:42.5,totalAmount:42.5,lines:[{description:'No PO invoice after review',qty:1,unitPrice:42.5,extendedAmount:42.5,lineAmount:42.5,glAccountSuggestion:'5110',branch:'100'}]}});
+  expect(seeded.status,JSON.stringify(seeded.body)).toBe(200);
+
+  await openView(page,`/ap/incoming-documents/${id}/review`,'#invoiceReviewForm');
+  const poInput=page.locator("#invoiceReviewForm [data-field='purchaseOrderNumber']");
+  await expect(poInput).toBeVisible();
+  await poInput.fill('');
+  const saveResponsePromise=page.waitForResponse(response=>response.url().endsWith(`/api/ap/incoming-documents/${id}`)&&response.request().method()==='PUT');
+  await page.locator('#saveReview').click();
+  const saveResponse=await saveResponsePromise;const saveText=await saveResponse.text();
+  expect(saveResponse.status(),saveText).toBe(200);
+  const saved=await api(page,`/api/ap/incoming-documents/${id}`);
+  expect(saved.status,JSON.stringify(saved.body)).toBe(200);
+  expect(saved.body.extracted.purchaseOrderNumber).toBe('');
+  expect(saved.body.extracted.poNumber).toBe('');
+  expect(saved.body.poMatch?.poNumber||'').toBe('');
+  expect((saved.body.draftBill?.lines||[]).every(line=>!(line.poNumber||line.poLineId||line.receiptNumber))).toBe(true);
+
+  await openView(page,`/ap/incoming-documents/${id}/review`,'#invoiceReviewForm');
+  await expect(page.locator("#invoiceReviewForm [data-field='purchaseOrderNumber']")).toHaveValue('');
+  const createResponsePromise=page.waitForResponse(response=>response.url().endsWith(`/api/ap/incoming-documents/${id}/create-bill`)&&response.request().method()==='POST');
+  await page.locator('#createBill').click();
+  const createResponse=await createResponsePromise;const createText=await createResponse.text();
+  expect(createResponse.status(),createText).toBe(201);
+  const created=JSON.parse(createText);
+  expect(created.billId).toBeTruthy();
+  expect(created.bill.lines[0].poNumber||'').toBe('');
+  expect(created.bill.invoicePdfAttached).toBe(true);
+  await expect.poll(()=>page.url()).toContain(`/ap/bills/${created.billId}`);
 });
 
 test('eligible vendor PO lookup returns only selectable vendor POs',async({page})=>{
