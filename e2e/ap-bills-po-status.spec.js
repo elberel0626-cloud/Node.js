@@ -27,6 +27,12 @@ async function createPoLinkedBill(page){
   return{bill:created.body,po};
 }
 
+test('running AP Bills list API returns serialized bills successfully',async({page})=>{
+  const result=await request(page,'/api/ap/documents?type=Bill');
+  expect(result.status,result.text).toBe(200);
+  expect(Array.isArray(result.body)).toBe(true);
+});
+
 test('AP sidebar navigation actually replaces the screen with Bills and Adjustments',async({page})=>{
   await openView(page,'/ap/incoming-documents','#view');
   const billsNav=page.locator("#ar-nav a[href='/ap/bills']");
