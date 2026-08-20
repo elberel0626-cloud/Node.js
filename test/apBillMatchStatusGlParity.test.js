@@ -11,7 +11,7 @@ test('AP bill status and GL parity UI previews server 3-way status before save',
   assert.match(source,/Waiting for Receipt/);
   assert.match(source,/Partially Received/);
   assert.match(source,/Matched - Ready/);
-  assert.match(source,/Price Variance/);
+  assert.match(source,/Variance\|Exception/);
   assert.match(source,/GL Code/);
   assert.match(source,/GL Account Description/);
   assert.match(source,/receiptNotInvoicedAccount/);
