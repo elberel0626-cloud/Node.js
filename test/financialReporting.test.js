@@ -65,3 +65,33 @@ test('mapped financial reports never change sections just because an account is 
  assert.equal(pl.totalExpenses,750);
  assert.equal(pl.netIncome,150);
 });
+
+test('balance sheet rolls unclosed current-year net income into equity when it explains the remaining variance',()=>{
+ const currentYearAccounts=accounts.map(account=>account.code==='3000'?{...account,balance:-125000}:{...account});
+ const currentYearService=createFinancialReportingService({accounts:currentYearAccounts,postedLines:code=>lines[code]||[],companyName:'Test Company'});
+ const bs=currentYearService.getBalanceSheet({asOf:'2026-07'});
+ assert.equal(bs.preCurrentNetIncomeDifference,100000);
+ assert.equal(bs.ytdNetIncome,100000);
+ assert.equal(bs.currentNetIncome,100000);
+ assert.equal(bs.totalAssets,425000);
+ assert.equal(bs.totalLiabilities,200000);
+ assert.equal(bs.totalEquity,225000);
+ assert.equal(bs.totalLiabilitiesEquity,425000);
+ assert.equal(bs.difference,0);
+ assert.equal(bs.balanced,true);
+ const currentIncome=bs.sections.find(section=>section.name==='EQUITY').groups.find(group=>group.name==='Current Net Income');
+ assert.equal(currentIncome.total,100000);
+ assert.deepEqual(currentIncome.details,[]);
+});
+
+test('balance sheet does not fabricate current net income when another variance remains',()=>{
+ const mismatchedAccounts=accounts.map(account=>account.code==='3000'?{...account,balance:-120000}:{...account});
+ const mismatchedService=createFinancialReportingService({accounts:mismatchedAccounts,postedLines:code=>lines[code]||[],companyName:'Test Company'});
+ const bs=mismatchedService.getBalanceSheet({asOf:'2026-07'});
+ assert.equal(bs.preCurrentNetIncomeDifference,105000);
+ assert.equal(bs.ytdNetIncome,100000);
+ assert.equal(bs.currentNetIncome,0);
+ assert.equal(bs.difference,105000);
+ assert.equal(bs.balanced,false);
+ assert.equal(bs.sections.find(section=>section.name==='EQUITY').groups.some(group=>group.name==='Current Net Income'),false);
+});
