@@ -28,6 +28,7 @@ on:
       - test/poMatchingPermissions.test.js
       - e2e/ap-po-incoming-reliability.spec.js
       - e2e/ap-new-bill-professional-po.spec.js
+      - e2e/ap-new-bill-live-preview.spec.js
       - package.json
       - .github/workflows/verify-ap-po-workspace.yml
   workflow_dispatch:
@@ -39,7 +40,7 @@ permissions:
 jobs:
   verify-ap-po-workspace:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,7 +81,46 @@ jobs:
         run: |
           echo "E2E_ADMIN_EMAIL=ap-po-e2e@example.com" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$(openssl rand -hex 20)" >> "$GITHUB_ENV"
+      - name: Browser unsaved PO preview API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'preview API returns'
+          rc=$?
+          state=success
+          description='Unsaved AP preview API returned server 3-way status'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Unsaved AP preview API failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-preview-api' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser new bill GL outline
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'line grid shows GL code'
+          rc=$?
+          state=success
+          description='New AP Bill line grid shows GL code and account before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill GL code/account before save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-gl' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser new bill status parity
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'displays same server match status'
+          rc=$?
+          state=success
+          description='New AP Bill displays exact server match status before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill server match status before save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-status' -f description="$description" >/dev/null
+          exit "$rc"
       - name: Browser new bill professional PO workspace
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
