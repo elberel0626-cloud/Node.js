@@ -10,6 +10,7 @@ on:
       - public/apNewBillProfessionalPo.js
       - public/apPoVendorAutoRefresh.js
       - public/apBillMatchStatusGlParity.js
+      - public/apBillLineGlOutline.js
       - public/index.html
       - src/apInvoiceEvaluation.js
       - src/apIncomingConversionPatch.js
@@ -93,18 +94,44 @@ jobs:
           if [ "$rc" -ne 0 ]; then state=failure; description='Unsaved AP preview API failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-preview-api' -f description="$description" >/dev/null
           exit "$rc"
-      - name: Browser new bill GL outline
+      - name: Browser new bill GL labels
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'line grid shows GL code'
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'labels GL code before save'
           rc=$?
           state=success
-          description='New AP Bill line grid shows GL code and account before save'
-          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill GL code/account before save failed'; fi
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-gl' -f description="$description" >/dev/null
+          description='New AP Bill labels GL Code and GL Account Description before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill GL labels before save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-gl-labels' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser new bill default GL
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'has default GL account before save'
+          rc=$?
+          state=success
+          description='New AP Bill has a GL account value before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill default GL account before save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-gl-value' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser new bill GL annotation
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-live-preview.spec.js -g 'shows effective GL annotation before save'
+          rc=$?
+          state=success
+          description='New AP Bill shows effective GL annotation before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill effective GL annotation before save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-gl-annotation' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser new bill status parity
         if: success()
