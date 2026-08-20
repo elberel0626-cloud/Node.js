@@ -8,6 +8,7 @@ import { prepareCashPurchaseApplicationServer } from './cashPurchaseApplications
 import { prepareIncomingPurchaseOrderWorkflowServer } from './incomingPurchaseOrderWorkflowPatch.js';
 import { preparePurchaseOrderPreferencesServer } from './purchaseOrderPreferencesPatch.js';
 import { preparePurchaseOrderReportingServer } from './purchaseOrderReportingPatch.js';
+import { prepareApIncomingConversionServer } from './apIncomingConversionPatch.js';
 
 async function makePoPreferencesRuntimeInitializationSafe(modulePath){
   const moduleUrl=new URL(modulePath,import.meta.url);
@@ -30,7 +31,8 @@ const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(
 const poPreferencesServerModule = await preparePurchaseOrderPreferencesServer(incomingPoServerModule);
 await makePoPreferencesRuntimeInitializationSafe(poPreferencesServerModule);
 const poReportingServerModule = await preparePurchaseOrderReportingServer(poPreferencesServerModule);
-const poReportingServerUrl = new URL(poReportingServerModule, import.meta.url);
-execFileSync(process.execPath, ['--check', fileURLToPath(poReportingServerUrl)], { stdio: 'inherit' });
-await import(poReportingServerModule);
+const apIncomingConversionServerModule = await prepareApIncomingConversionServer(poReportingServerModule);
+const apIncomingConversionServerUrl = new URL(apIncomingConversionServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(apIncomingConversionServerUrl)], { stdio: 'inherit' });
+await import(apIncomingConversionServerModule);
 applyStatementClassification(glAccounts);
