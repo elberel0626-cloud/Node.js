@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { glAccounts } from './data/seed.js';
 import { applyStatementClassification } from './accountStatementClassification.js';
 import { prepareCashPurchaseApplicationServer } from './cashPurchaseApplicationsPatch.js';
@@ -8,5 +10,7 @@ import { prepareCashPurchaseApplicationServer } from './cashPurchaseApplications
 // statement classification is visible everywhere without rewriting history.
 applyStatementClassification(glAccounts);
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
+const cashPurchaseServerUrl = new URL(cashPurchaseServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(cashPurchaseServerUrl)], { stdio: 'inherit' });
 await import(cashPurchaseServerModule);
 applyStatementClassification(glAccounts);
