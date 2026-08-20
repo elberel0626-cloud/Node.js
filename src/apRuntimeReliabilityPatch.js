@@ -9,6 +9,10 @@ function replaceOnce(source,oldText,newText,label){const at=source.indexOf(oldTe
 
 export function applyApRuntimeReliabilityPatch(source){
   source=replaceOnce(source,
+    "accountsPayable:'2020',apTrade:'2010',poRni:'2020'",
+    "accountsPayable:'2010',apTrade:'2010',poRni:'2020'",
+    'AP invoices and payments use the 2010 accounts payable control account');
+  source=replaceOnce(source,
     " if(method==='PUT'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); const b=await body(req); const before={...r.extracted};",
     " if(method==='PUT'&&pathname.startsWith('/api/ap/incoming-documents/')){ const id=pathname.split('/').pop(); const r=apIncomingVendorBills.find(x=>x.id===id); if(!r) return json(res,404,{error:'Incoming document not found'}); r.extracted=r.extracted||{}; r.vendorMatch=r.vendorMatch||{}; r.draftBill=r.draftBill||{}; r.exceptions=Array.isArray(r.exceptions)?r.exceptions:[]; r.auditTrail=Array.isArray(r.auditTrail)?r.auditTrail:[]; const b=await body(req); const before={...r.extracted};",
     'incoming review state initialization');
