@@ -16,6 +16,7 @@
   document.head.appendChild(style);
 
   let chartPromise=null,preferencesPromise=null,lastSignature='',timer=null,savedToken='';
+  let lastPreviewMatch=null,lastPreviewLines=[],lastPreviewAccounts=[],lastPreviewPrefs={};
   const chart=()=>chartPromise||(chartPromise=api('/api/finance/chart-of-accounts').catch(()=>[]));
   const preferences=()=>preferencesPromise||(preferencesPromise=api('/api/purchase-orders/preferences').catch(()=>({preferences:{}})));
   const accountLabel=(code,accounts)=>{const row=(accounts||[]).find(account=>String(account.accountNumber||account.code)===String(code||''));return code?`${code}${row?` — ${row.accountTitle||row.name||''}`:''}`:'—'};
@@ -57,10 +58,12 @@
       const po=String(row.querySelector('.ln-po')?.value||'').trim();
       const selected=String(select.value||'').trim();
       const effective=po?rni:selected;
-      select.title=accountLabel(selected,accounts);
+      const label=accountLabel(selected,accounts);
+      if(select.title!==label)select.title=label;
       let note=select.parentElement?.querySelector('.ap-effective-gl');
       if(!note){note=document.createElement('small');note.className='ap-effective-gl';select.after(note);}
-      note.textContent=po?`PO posting basis: ${accountLabel(effective,accounts)}`:`GL: ${accountLabel(effective,accounts)}`;
+      const noteText=po?`PO posting basis: ${accountLabel(effective,accounts)}`:`GL: ${accountLabel(effective,accounts)}`;
+      if(note.textContent!==noteText)note.textContent=noteText;
       const description=row.querySelector('.ln-account-description');
       if(description&&!description.textContent.trim()&&selected){const found=accounts.find(account=>String(account.accountNumber||account.code)===selected);if(found)description.textContent=found.accountTitle||found.name||'';}
     });
@@ -87,9 +90,9 @@
       <div><span>Status Source</span><b>${preview?'Live Unsaved Preview':'Saved AP Bill'}</b></div>`;
   }
 
-  async function renderUnsavedMatch(match,lines,accounts,prefs){
+  function renderUnsavedMatch(match,lines,accounts,prefs){
     const host=document.getElementById('newMatchV2');
-    if(!host)return;
+    if(!host)return false;
     [...host.children].forEach(child=>{if(child.querySelector?.('h4')?.textContent?.includes('Current 3-Way Match'))child.style.display='none';});
     let section=host.querySelector('.ap-unsaved-match-table');
     if(!section){section=document.createElement('section');section.className='panel ap-unsaved-match-table';host.prepend(section);}
@@ -102,6 +105,20 @@
     </tr>`}).join('');
     section.innerHTML=`<h4>Current 3-Way Match</h4><p><b class='${statusClass(match.status)}'>${esc(match.status)}</b> · <span class='${match.postable?'ap-match-good':'ap-match-bad'}'>${match.postable?'Matched – Ready to Post':'Posting Blocked'}</span></p>
       <div class='table-wrap'><table><tr><th>Line</th><th>PO</th><th>Item</th><th>Description</th><th>Ordered</th><th>Received</th><th>Prev Vouched</th><th>Available</th><th>Invoice Qty</th><th>PO Cost</th><th>Invoice Cost</th><th>Status</th><th>GL Code</th><th>GL Account</th></tr>${rows||"<tr><td colspan='14'>No PO-linked invoice lines.</td></tr>"}</table></div>`;
+    return true;
+  }
+
+  function rememberPreview(match,lines,accounts,prefs){
+    lastPreviewMatch=match;
+    lastPreviewLines=(lines||[]).map(line=>({...line}));
+    lastPreviewAccounts=accounts||[];
+    lastPreviewPrefs=prefs||{};
+  }
+
+  function restorePreviewIfOverwritten(){
+    if(!isNew()||!lastPreviewMatch)return;
+    const host=document.getElementById('newMatchV2');
+    if(host&&!host.querySelector('.ap-unsaved-match-table'))renderUnsavedMatch(lastPreviewMatch,lastPreviewLines,lastPreviewAccounts,lastPreviewPrefs);
   }
 
   async function previewNew(){
@@ -111,14 +128,15 @@
     normalizeLineGrid(accounts,prefs);
     const lines=readLines();
     const signature=JSON.stringify(lines.map(line=>[line.poNumber,line.inventoryId,line.qty,line.unitCost,line.expenseAccount]));
-    if(signature===lastSignature)return;lastSignature=signature;
-    if(!lines.some(line=>String(line.poNumber||'').trim())){const match={hasPo:false,status:'Not Applicable',postable:true,lines:[],totals:{invoiceQty:lines.reduce((sum,line)=>sum+num(line.qty),0),matchedQty:0,shortQty:0,priceVariance:0}};renderStrip(match,{preview:true});document.querySelector('#newMatchV2 .ap-unsaved-match-table')?.remove();return;}
+    if(signature===lastSignature){restorePreviewIfOverwritten();return;}lastSignature=signature;
+    if(!lines.some(line=>String(line.poNumber||'').trim())){lastPreviewMatch=null;lastPreviewLines=[];const match={hasPo:false,status:'Not Applicable',postable:true,lines:[],totals:{invoiceQty:lines.reduce((sum,line)=>sum+num(line.qty),0),matchedQty:0,shortQty:0,priceVariance:0}};renderStrip(match,{preview:true});document.querySelector('#newMatchV2 .ap-unsaved-match-table')?.remove();return;}
     try{
       const vendorId=String(document.getElementById('bvend')?.value||'').trim();
       const match=await api('/api/ap/po-match-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type:'Bill',status:'Draft',vendorId,lines})});
+      rememberPreview(match,lines,accounts,prefs);
       renderStrip(match,{preview:true});
-      await renderUnsavedMatch(match,lines,accounts,prefs);
-    }catch(error){const strip=ensureStrip();if(strip)strip.innerHTML=`<div><span>PO / Match Status</span><b class='ap-match-bad'>Unable to calculate match</b></div><div><span>Details</span><b>${esc(error.message)}</b></div>`;}
+      renderUnsavedMatch(match,lines,accounts,prefs);
+    }catch(error){lastPreviewMatch=null;const strip=ensureStrip();if(strip)strip.innerHTML=`<div><span>PO / Match Status</span><b class='ap-match-bad'>Unable to calculate match</b></div><div><span>Details</span><b>${esc(error.message)}</b></div>`;}
   }
 
   async function showSaved(){
@@ -130,11 +148,15 @@
   }
 
   function schedule(){clearTimeout(timer);timer=setTimeout(()=>{if(!route())return;Promise.resolve(isNew()?previewNew():showSaved()).catch(()=>{});},100);}
-  new MutationObserver(()=>{if(!route())return;Promise.all([chart(),preferences()]).then(([accounts,prefResult])=>normalizeLineGrid(accounts,prefResult.preferences||prefResult||{})).catch(()=>{});schedule();}).observe(document.body,{childList:true,subtree:true});
+  new MutationObserver(()=>{
+    if(!route())return;
+    Promise.all([chart(),preferences()]).then(([accounts,prefResult])=>{normalizeLineGrid(accounts,prefResult.preferences||prefResult||{});restorePreviewIfOverwritten();}).catch(()=>{});
+    schedule();
+  }).observe(document.body,{childList:true,subtree:true});
   document.addEventListener('input',event=>{if(event.target?.closest?.('#billLines')||['bvend','bVendorNumber','bVendorName'].includes(event.target?.id)){lastSignature='';schedule();}},true);
   document.addEventListener('change',event=>{if(event.target?.closest?.('#billLines')||['bvend','bVendorNumber','bVendorName'].includes(event.target?.id)){lastSignature='';schedule();}},true);
   document.addEventListener('click',event=>{if(event.target?.closest?.('#poApplyNewV2,.poPickNewV2,[data-tab="purchaseOrder"],[data-tab="billLines"]')){lastSignature='';setTimeout(schedule,80);}},true);
   document.addEventListener('erp:ap-vendor-selected',()=>{lastSignature='';schedule();},true);
-  window.addEventListener('popstate',()=>{lastSignature='';savedToken='';schedule();});
+  window.addEventListener('popstate',()=>{lastSignature='';savedToken='';lastPreviewMatch=null;lastPreviewLines=[];schedule();});
   schedule();
 })();
