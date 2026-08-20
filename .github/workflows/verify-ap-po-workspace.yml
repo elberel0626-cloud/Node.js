@@ -7,6 +7,7 @@ on:
       - public/apPurchaseOrderWorkspace.js
       - public/apIncomingCreateBillFix.js
       - public/apProfessionalMatchingV2.js
+      - public/apNewBillProfessionalPo.js
       - public/index.html
       - src/apInvoiceEvaluation.js
       - src/apIncomingConversionPatch.js
@@ -17,11 +18,13 @@ on:
       - test/apInvoiceNegativeLines.test.js
       - test/apProfessionalPoWorkspace.test.js
       - test/apProfessionalMatchingV2.test.js
+      - test/apNewBillProfessionalPo.test.js
       - test/apIncomingConversionPatch.test.js
       - test/incomingReviewSavePatch.test.js
       - test/apRuntimeReliabilityPatch.test.js
       - test/poMatchingPermissions.test.js
       - e2e/ap-po-incoming-reliability.spec.js
+      - e2e/ap-new-bill-professional-po.spec.js
       - package.json
       - .github/workflows/verify-ap-po-workspace.yml
   workflow_dispatch:
@@ -33,7 +36,7 @@ permissions:
 jobs:
   verify-ap-po-workspace:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,11 +64,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
+          node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apNewBillProfessionalPo.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
           rc=$?
           state=success
-          description='AP incoming, signed GL, and PO unit regressions passed'
-          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed GL, or PO unit regression failed'; fi
+          description='AP incoming, signed GL, new bill PO, and PO unit regressions passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed GL, new bill PO, or PO unit regression failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/regression' -f description="$description" >/dev/null
           exit "$rc"
       - name: Install Chromium
@@ -74,7 +77,20 @@ jobs:
         run: |
           echo "E2E_ADMIN_EMAIL=ap-po-e2e@example.com" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$(openssl rand -hex 20)" >> "$GITHUB_ENV"
+      - name: Browser new bill professional PO workspace
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-new-bill-professional-po.spec.js
+          rc=$?
+          state=success
+          description='New AP Bill uses professional PO workspace and applies PO lines'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill professional PO workspace failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-bill' -f description="$description" >/dev/null
+          exit "$rc"
       - name: Browser incoming save and create
+        if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
