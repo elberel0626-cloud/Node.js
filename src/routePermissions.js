@@ -3,6 +3,7 @@
 export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['POST'],/^\/api\/ap\/documents\/[^/]+\/submit-approval$/,'AP_BILL_SUBMIT'],
   [['POST'],/^\/api\/ap\/documents\/[^/]+\/approval-action$/,'AP_BILL_READ'],
+  [['POST'],/^\/api\/ap\/po-match-preview$/,'AP_BILL_READ'],
   [['GET'],/^\/api\/ap\/vendors(?:\/.*)?$/,'AP_VENDOR_READ'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/ap\/vendors(?:\/.*)?$/,'AP_VENDOR_EDIT'],
   [['GET'],/^\/api\/ap\/payments(?:\/.*)?$/,'AP_BILL_READ'],
