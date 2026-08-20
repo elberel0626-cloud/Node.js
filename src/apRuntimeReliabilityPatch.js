@@ -36,6 +36,10 @@ export function applyApRuntimeReliabilityPatch(source){
     "if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,line),branch:line.branch||branch});",
     "if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount>0?lineAmount:0,credit:lineAmount<0?Math.abs(lineAmount):0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,line),branch:line.branch||branch});",
     'signed AP bill lines use conventional GL debit credit sides');
+  source=replaceOnce(source,
+    " if(method==='POST'&&pathname==='/api/ap/invoice-evaluation'){const b=await body(req),vendor=vendors.find(v=>v.id===b.vendorId)||{},po=purchaseOrders.find(item=>item.poNumber===b.poNumber),receipts=purchaseReceipts.filter(receipt=>receipt.poId===po?.id),evaluation=evaluateApInvoice({vendor,invoice:b.invoice||b,lines:b.lines||[],purchaseOrder:po,receipts,recurringProfile:b.recurringProfile,rules:apInvoiceDecisionRules,duplicateResults:b.duplicateResults||[]});return json(res,200,evaluation);}",
+    " if(method==='POST'&&pathname==='/api/ap/invoice-evaluation'){const b=await body(req),vendor=vendors.find(v=>v.id===b.vendorId)||{},po=purchaseOrders.find(item=>item.poNumber===b.poNumber),receipts=purchaseReceipts.filter(receipt=>receipt.poId===po?.id),evaluation=evaluateApInvoice({vendor,invoice:b.invoice||b,lines:b.lines||[],purchaseOrder:po,receipts,recurringProfile:b.recurringProfile,rules:apInvoiceDecisionRules,duplicateResults:b.duplicateResults||[]});return json(res,200,evaluation);}\n if(method==='POST'&&pathname==='/api/ap/po-match-preview'){const b=await body(req),preview={...b,type:'Bill',posted:false,status:b.status||'Draft',lines:Array.isArray(b.lines)?b.lines:[]},match=evaluatePoThreeWayMatch(preview);return json(res,200,match);}",
+    'unsaved AP PO match preview');
   return source;
 }
 
