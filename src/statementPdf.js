@@ -14,8 +14,8 @@ function daysPastDue(dueDate,statementDate){
   if(!dueDate)return 0;const due=new Date(`${String(dueDate).slice(0,10)}T12:00:00`),asOf=new Date(`${statementDateValue(statementDate)}T12:00:00`);if(Number.isNaN(due.getTime())||Number.isNaN(asOf.getTime()))return 0;return Math.max(0,Math.floor((asOf-due)/86400000));
 }
 function agingTotals(docs,statementDate){
-  const a={current:0,b1:0,b2:0,b3:0,b4:0};
-  for(const d of docs){const amount=signedBalance(d),days=daysPastDue(d.dueDate,statementDate);if(!d.dueDate||new Date(d.dueDate)>new Date(statementDate))a.current+=amount;else if(days<=30)a.b1+=amount;else if(days<=60)a.b2+=amount;else if(days<=90)a.b3+=amount;else a.b4+=amount;}
+  const a={current:0,b1:0,b2:0,b3:0,b4:0},asOf=statementDateValue(statementDate);
+  for(const d of docs){const amount=signedBalance(d),days=daysPastDue(d.dueDate,asOf),due=String(d.dueDate||'').slice(0,10);if(!due||due>=asOf)a.current+=amount;else if(days<=30)a.b1+=amount;else if(days<=60)a.b2+=amount;else if(days<=90)a.b3+=amount;else a.b4+=amount;}
   return a;
 }
 function drawLogo(c){
