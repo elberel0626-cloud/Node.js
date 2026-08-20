@@ -10,11 +10,15 @@ on:
       - public/index.html
       - src/apIncomingConversionPatch.js
       - src/incomingReviewSavePatch.js
+      - src/apRuntimeReliabilityPatch.js
+      - src/routePermissions.js
       - src/start.js
       - test/apProfessionalPoWorkspace.test.js
       - test/apProfessionalMatchingV2.test.js
       - test/apIncomingConversionPatch.test.js
       - test/incomingReviewSavePatch.test.js
+      - test/apRuntimeReliabilityPatch.test.js
+      - e2e/ap-po-incoming-reliability.spec.js
       - package.json
       - .github/workflows/verify-ap-po-workspace.yml
   workflow_dispatch:
@@ -25,7 +29,7 @@ permissions:
 jobs:
   verify-ap-po-workspace:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,4 +43,11 @@ jobs:
       - name: Syntax check
         run: npm run check
       - name: AP PO focused regressions
-        run: node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/purchaseOrderPreferencesPatch.test.js
+        run: node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/purchaseOrderPreferencesPatch.test.js
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser save and PO-link flow
+        env:
+          E2E_ADMIN_EMAIL: ap-po-e2e@example.com
+          E2E_ADMIN_PASSWORD: AP-Po-E2E-Strong-Password-2026!
+        run: npx playwright test e2e/ap-po-incoming-reliability.spec.js --project=chromium
