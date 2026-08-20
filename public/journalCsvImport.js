@@ -1,7 +1,13 @@
-const JOURNAL_CSV_HEADERS = ['Branch', 'Branch Code', 'Account', 'Debit', 'Credit', 'Line Description'];
+const JOURNAL_CSV_HEADERS = ['Account', 'Branch', 'Debit', 'Credit', 'Line Description'];
+const LEGACY_JOURNAL_CSV_HEADERS = ['Branch', 'Branch Code', 'Account', 'Debit', 'Credit', 'Line Description'];
 
 function normalizeHeader(value) {
   return String(value ?? '').replace(/^\uFEFF/, '').trim().toLowerCase();
+}
+
+function headerMatches(actual, expected) {
+  const normalized = expected.map(normalizeHeader);
+  return actual.length === normalized.length && normalized.every((value, index) => actual[index] === value);
 }
 
 export function parseJournalCsv(text) {
@@ -68,23 +74,37 @@ export function validateJournalCsvRecords(text) {
   if (!rows.length) throw new Error('CSV file is empty.');
 
   const header = rows[0].map(normalizeHeader);
-  const expected = JOURNAL_CSV_HEADERS.map(normalizeHeader);
-  const exactHeader = header.length === expected.length && expected.every((value, index) => header[index] === value);
-  if (!exactHeader) {
-    throw new Error(`CSV columns must be exactly: ${JOURNAL_CSV_HEADERS.join(', ')}`);
+  const preferredFormat = headerMatches(header, JOURNAL_CSV_HEADERS);
+  const legacyFormat = headerMatches(header, LEGACY_JOURNAL_CSV_HEADERS);
+  if (!preferredFormat && !legacyFormat) {
+    throw new Error(`CSV columns must be: ${JOURNAL_CSV_HEADERS.join(', ')}`);
   }
 
+  const columnCount = preferredFormat ? JOURNAL_CSV_HEADERS.length : LEGACY_JOURNAL_CSV_HEADERS.length;
   const records = rows.slice(1).map((values, index) => {
     const rowNumber = index + 2;
-    if (values.length > JOURNAL_CSV_HEADERS.length && values.slice(JOURNAL_CSV_HEADERS.length).some(value => String(value).trim())) {
+    if (values.length > columnCount && values.slice(columnCount).some(value => String(value).trim())) {
       throw new Error(`Row ${rowNumber}: too many columns. Check commas and quoted text.`);
     }
     const padded = [...values];
-    while (padded.length < JOURNAL_CSV_HEADERS.length) padded.push('');
-    const [branch, branchCode, account, debitRaw, creditRaw, lineDescription] = padded.map(value => String(value ?? '').trim());
+    while (padded.length < columnCount) padded.push('');
+
+    let branch = '';
+    let branchCode = '';
+    let account = '';
+    let debitRaw = '';
+    let creditRaw = '';
+    let lineDescription = '';
+
+    if (preferredFormat) {
+      [account, branchCode, debitRaw, creditRaw, lineDescription] = padded.map(value => String(value ?? '').trim());
+    } else {
+      [branch, branchCode, account, debitRaw, creditRaw, lineDescription] = padded.map(value => String(value ?? '').trim());
+    }
+
     const debit = parseAmount(debitRaw, 'Debit', rowNumber);
     const credit = parseAmount(creditRaw, 'Credit', rowNumber);
-    if (!branch && !branchCode) throw new Error(`Row ${rowNumber}: Branch or Branch Code is required.`);
+    if (!branchCode && !branch) throw new Error(`Row ${rowNumber}: Branch code is required.`);
     if (!account) throw new Error(`Row ${rowNumber}: Account is required.`);
     if ((debit > 0 && credit > 0) || (debit === 0 && credit === 0)) {
       throw new Error(`Row ${rowNumber}: enter either Debit or Credit, but not both.`);
@@ -117,7 +137,7 @@ function resolveBranch(record, options) {
     ? options.find(option => option.name.toLowerCase() === branchInput.toLowerCase() || option.code.toLowerCase() === branchInput.toLowerCase())
     : null;
 
-  if (codeInput && !byCode) throw new Error(`Row ${record.rowNumber}: Branch Code "${codeInput}" was not found.`);
+  if (codeInput && !byCode) throw new Error(`Row ${record.rowNumber}: Branch code "${codeInput}" was not found.`);
   if (branchInput && !byBranch) throw new Error(`Row ${record.rowNumber}: Branch "${branchInput}" was not found.`);
   if (byCode && byBranch && byCode.code !== byBranch.code) {
     throw new Error(`Row ${record.rowNumber}: Branch and Branch Code do not match.`);
@@ -174,6 +194,7 @@ function applyImportedRecords(records) {
 
   [...table.querySelectorAll('tr')].slice(1).forEach(row => row.querySelector('.new-je-remove')?.click());
   resolved.forEach(() => addButton.click());
+  installJournalBranchLayout();
 
   const rows = [...table.querySelectorAll('tr')].slice(1);
   resolved.forEach((record, index) => {
@@ -198,6 +219,71 @@ function applyImportedRecords(records) {
   return true;
 }
 
+function replaceBranchCodeInput(row, branchNameSelect) {
+  const branchCodeControl = row.querySelector('.bcode');
+  if (!branchCodeControl || branchCodeControl.tagName === 'SELECT') return;
+
+  const select = document.createElement('select');
+  select.className = branchCodeControl.className;
+  select.setAttribute('aria-label', 'Branch');
+  select.title = 'Branch code';
+
+  [...branchNameSelect.options].forEach(option => {
+    const codeOption = document.createElement('option');
+    codeOption.value = option.value;
+    codeOption.textContent = option.value;
+    select.appendChild(codeOption);
+  });
+
+  const existingValue = String(branchCodeControl.value || '').trim();
+  select.value = [...select.options].some(option => option.value === existingValue) ? existingValue : branchNameSelect.value;
+  branchNameSelect.value = select.value;
+  select.addEventListener('change', () => {
+    branchNameSelect.value = select.value;
+  });
+  branchCodeControl.replaceWith(select);
+}
+
+function installJournalBranchLayout() {
+  if (location.pathname !== '/finance/journal/new') return;
+  const table = document.getElementById('jlines');
+  if (!table) return;
+
+  const headerRow = table.querySelector('tr');
+  if (headerRow && !headerRow.dataset.branchLayoutApplied) {
+    const cells = [...headerRow.children];
+    const branchNameHeader = cells[0];
+    const branchCodeHeader = cells[1];
+    const accountHeader = cells[2];
+    if (branchNameHeader && branchCodeHeader && accountHeader) {
+      branchNameHeader.style.display = 'none';
+      branchNameHeader.setAttribute('aria-hidden', 'true');
+      branchCodeHeader.textContent = 'Branch';
+      headerRow.insertBefore(accountHeader, branchCodeHeader);
+      headerRow.dataset.branchLayoutApplied = '1';
+    }
+  }
+
+  [...table.querySelectorAll('tr')].slice(1).forEach(row => {
+    const branchNameSelect = row.querySelector('.bname');
+    const accountControl = row.querySelector('.acctSel');
+    if (!branchNameSelect || !accountControl) return;
+
+    const branchNameCell = branchNameSelect.closest('td');
+    if (branchNameCell) {
+      branchNameCell.style.display = 'none';
+      branchNameCell.setAttribute('aria-hidden', 'true');
+    }
+
+    replaceBranchCodeInput(row, branchNameSelect);
+    const branchCodeCell = row.querySelector('.bcode')?.closest('td');
+    const accountCell = accountControl.closest('td');
+    if (branchCodeCell && accountCell && accountCell.nextElementSibling !== branchCodeCell) {
+      row.insertBefore(accountCell, branchCodeCell);
+    }
+  });
+}
+
 function installJournalCsvUpload() {
   if (location.pathname !== '/finance/journal/new') return;
   const form = document.getElementById('newJe');
@@ -207,7 +293,7 @@ function installJournalCsvUpload() {
   const uploadButton = document.createElement('button');
   uploadButton.type = 'button';
   uploadButton.id = 'newJeCsvUpload';
-  uploadButton.title = 'Import journal lines from CSV';
+  uploadButton.title = `Import CSV: ${JOURNAL_CSV_HEADERS.join(', ')}`;
   uploadButton.textContent = '↑ Upload CSV';
 
   const fileInput = document.createElement('input');
@@ -245,10 +331,15 @@ function installJournalCsvUpload() {
   });
 }
 
+function installJournalEnhancements() {
+  installJournalBranchLayout();
+  installJournalCsvUpload();
+}
+
 if (typeof document !== 'undefined') {
-  const observer = new MutationObserver(installJournalCsvUpload);
+  const observer = new MutationObserver(installJournalEnhancements);
   const start = () => {
-    installJournalCsvUpload();
+    installJournalEnhancements();
     observer.observe(document.documentElement, { childList: true, subtree: true });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, { once: true });
