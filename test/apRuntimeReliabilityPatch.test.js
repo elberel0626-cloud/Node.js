@@ -11,9 +11,11 @@ import { applyApIncomingConversionPatch } from '../src/apIncomingConversionPatch
 import { applyIncomingReviewSavePatch } from '../src/incomingReviewSavePatch.js';
 import { applyApRuntimeReliabilityPatch } from '../src/apRuntimeReliabilityPatch.js';
 
-test('final AP runtime initializes incoming review state, previews unsaved PO matches, and posts signed AP lines on conventional GL sides',async()=>{
+test('final AP runtime initializes incoming review state, previews unsaved PO matches, posts signed AP lines correctly, and uses account 2010 for AP control',async()=>{
   const base=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   let source=applyIncomingPurchaseOrderWorkflowPatch(base);source=applyPurchaseOrderPreferencesPatch(source);source=applyPurchaseOrderReportingPatch(source);source=applyApIncomingConversionPatch(source);source=applyIncomingReviewSavePatch(source);source=applyApRuntimeReliabilityPatch(source);
+  assert.match(source,/accountsPayable:'2010',apTrade:'2010',poRni:'2020'/);
+  assert.doesNotMatch(source,/accountsPayable:'2020'/);
   assert.match(source,/r\.draftBill=r\.draftBill\|\|\{\}/);
   assert.match(source,/submittedPoField/);
   assert.match(source,/r\.extracted\.purchaseOrderNumber=submittedPo;r\.extracted\.poNumber=submittedPo/);
