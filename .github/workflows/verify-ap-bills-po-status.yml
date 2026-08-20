@@ -6,6 +6,8 @@ on:
     paths:
       - public/apBillsPoStatusColumns.js
       - public/index.html
+      - src/apRuntimeReliabilityPatch.js
+      - test/apRuntimeReliabilityPatch.test.js
       - package.json
       - e2e/ap-bills-po-status.spec.js
       - .github/workflows/verify-ap-bills-po-status.yml
@@ -18,7 +20,7 @@ permissions:
 jobs:
   verify-ap-bills-po-status:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,23 +28,46 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - name: Syntax check
-        run: npm run check
+      - name: AP list runtime regression
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npm run check && node --test test/apRuntimeReliabilityPatch.test.js
+          rc=$?
+          state=success
+          description='AP bill list runtime and legacy serialization safety passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP bill list runtime or serialization safety failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/list-runtime' -f description="$description" >/dev/null
+          exit "$rc"
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Prepare ephemeral test login
         run: |
           echo "E2E_ADMIN_EMAIL=ap-bills-e2e@example.com" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$(openssl rand -hex 20)" >> "$GITHUB_ENV"
-      - name: Browser Bills and Adjustments PO columns
+      - name: Browser AP Bills navigation
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          npx playwright test e2e/ap-bills-po-status.spec.js
+          npx playwright test e2e/ap-bills-po-status.spec.js -g 'sidebar navigation actually replaces'
           rc=$?
           state=success
-          description='Bills and Adjustments shows PO Number and live PO Match Status'
+          description='AP sidebar navigation replaced the old screen with Bills and Adjustments'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP Bills SPA navigation left the prior screen active'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/navigation' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser Bills PO columns
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-bills-po-status.spec.js -g 'shows PO Number and exact live PO Match Status'
+          rc=$?
+          state=success
+          description='Bills and Adjustments shows PO Number and exact live PO Match Status'
           if [ "$rc" -ne 0 ]; then state=failure; description='AP bills PO Number or PO Match Status list failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/po-status-list' -f description="$description" >/dev/null
           exit "$rc"
