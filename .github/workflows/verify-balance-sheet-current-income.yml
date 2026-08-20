@@ -1,0 +1,38 @@
+name: Verify Balance Sheet Current Income
+
+on:
+  push:
+    branches: [Development]
+    paths:
+      - src/financialReporting.js
+      - test/financialReporting.test.js
+      - .github/workflows/verify-balance-sheet-current-income.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+jobs:
+  verify-balance-sheet-current-income:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify financial reporting
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node --check src/financialReporting.js && node --test test/financialReporting.test.js
+          rc=$?
+          state=success
+          description='Balance Sheet current net income roll-forward and balancing tests passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Balance Sheet current net income verification failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='finance/balance-sheet-current-income' -f description="$description" >/dev/null
+          exit "$rc"
