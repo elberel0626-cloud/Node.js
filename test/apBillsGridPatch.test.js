@@ -26,10 +26,13 @@ test('current app.js Bills and Adjustments route is covered by the startup patch
   assert.match(patched,/key:'poMatchStatus',label:'PO Match Status'/);
 });
 
-test('AP Bills helper no longer forces a full-page navigation to the login shell',async()=>{
+test('AP Bills helper keeps PO columns visible and its filter popup inside the viewport',async()=>{
   const helper=await readFile(new URL('../public/apBillsPoStatusColumns.js',import.meta.url),'utf8');
   assert.doesNotMatch(helper,/window\.location\.assign/);
   assert.doesNotMatch(helper,/stopImmediatePropagation/);
-  assert.match(helper,/poNumbers/);
-  assert.match(helper,/poMatchStatus/);
+  assert.match(helper,/REQUIRED_COLUMNS=\['poNumbers','poMatchStatus'\]/);
+  assert.match(helper,/settings\.visibleColumns\.push\(column\)/);
+  assert.match(helper,/keepFilterPopupInViewport/);
+  assert.match(helper,/window\.innerWidth-rect\.width-margin/);
+  assert.match(helper,/window\.dispatchEvent\(new PopStateEvent\('popstate'\)\)/);
 });
