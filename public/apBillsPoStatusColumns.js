@@ -1,5 +1,6 @@
 (()=>{
-  const isBillsList=()=>location.pathname==='/ap/bills';
+  const BILLS_PATH='/ap/bills';
+  const isBillsList=()=>location.pathname===BILLS_PATH;
   const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   const unique=values=>[...new Set((values||[]).map(value=>String(value||'').trim()).filter(Boolean))];
   const poNumbers=doc=>unique((doc?.lines||[]).map(line=>line.poNumber||line.sourcePoId||line.poId).concat(doc?.matchedPoNumber||doc?.poNumber||[]));
@@ -31,33 +32,62 @@
   `;
   document.head.appendChild(style);
 
-  function readRows(){
-    try{return JSON.parse(document.getElementById('apBillGrid_meta')?.textContent||'{}').rows||[];}catch{return[];}
+  let latestDocs=[],loadSequence=0,renderTimer=null,routeRepairTimer=null,lastPath=location.pathname;
+
+  async function fetchBills(){
+    const sequence=++loadSequence;
+    try{
+      const response=await fetch('/api/ap/documents?type=Bill',{credentials:'same-origin',cache:'no-store'});
+      if(!response.ok)throw new Error(`Bills request failed (${response.status})`);
+      const rows=await response.json();
+      if(sequence!==loadSequence||!isBillsList())return;
+      latestDocs=Array.isArray(rows)?rows:[];
+      enhance();
+    }catch(error){
+      console.error('Unable to refresh AP Bills PO status columns',error);
+    }
   }
 
-  function header(label,key,extraClass){
+  function setActiveNavigation(){
+    if(!isBillsList())return;
+    const nav=document.getElementById('ar-nav');
+    if(!nav)return;
+    nav.querySelectorAll('a.active').forEach(link=>link.classList.remove('active'));
+    nav.querySelector("a[href='/ap/bills']")?.classList.add('active');
+  }
+
+  function billIdForRow(tr){
+    const href=tr.querySelector("a[href^='/ap/bills/']")?.getAttribute('href')||'';
+    return href.startsWith('/ap/bills/')?decodeURIComponent(href.slice('/ap/bills/'.length)):'';
+  }
+
+  function header(label,key,extraClass=''){
     const th=document.createElement('th');
-    th.className=`grid-sort ap-po-list-column ${extraClass||''}`.trim();
+    th.className=`ap-po-list-column ${extraClass}`.trim();
     th.dataset.k=key;
     th.innerHTML=`<div class='th-wrap'><span>${esc(label)}</span></div>`;
     return th;
   }
 
   function enhance(){
-    if(!isBillsList())return;
-    const table=document.getElementById('apBillGrid');
-    if(!table)return;
-    const rows=readRows(),head=table.rows[0];
-    if(!head)return;
-    if(!head.querySelector("th[data-k='poNumbers']"))head.appendChild(header('PO Number','poNumbers',''));
+    if(!isBillsList())return false;
+    setActiveNavigation();
+    const table=document.getElementById('apBillGrid'),head=table?.rows?.[0];
+    if(!table||!head)return false;
+    if(!head.querySelector("th[data-k='poNumbers']"))head.appendChild(header('PO Number','poNumbers'));
     if(!head.querySelector("th[data-k='poMatchStatus']"))head.appendChild(header('PO Match Status','poMatchStatus','ap-po-match-column'));
 
+    const byId=new Map(latestDocs.map(doc=>[String(doc.id),doc]));
     [...table.querySelectorAll('tr[data-row]')].forEach(tr=>{
-      const doc=rows[Number(tr.dataset.row)]||{};
+      const doc=byId.get(billIdForRow(tr));
+      if(!doc)return;
       const pos=poNumbers(doc),status=matchStatus(doc),poSignature=pos.join('|')||'—',statusSignature=`${status}|${doc?.threeWayMatch?.postable}`;
       let poCell=tr.querySelector("td[data-k='poNumbers']");
       if(!poCell){poCell=document.createElement('td');poCell.dataset.k='poNumbers';poCell.className='ap-po-list-cell';tr.appendChild(poCell);}
-      if(poCell.dataset.value!==poSignature){poCell.dataset.value=poSignature;poCell.innerHTML=pos.length?pos.map(po=>`<a class='link' href='/purchase-orders/orders/${encodeURIComponent(po)}'>${esc(po)}</a>`).join(''):'—';}
+      if(poCell.dataset.value!==poSignature){
+        poCell.dataset.value=poSignature;
+        poCell.innerHTML=pos.length?pos.map(po=>`<a class='link' href='/purchase-orders/orders/${encodeURIComponent(po)}'>${esc(po)}</a>`).join(' '):'—';
+      }
       let statusCell=tr.querySelector("td[data-k='poMatchStatus']");
       if(!statusCell){statusCell=document.createElement('td');statusCell.dataset.k='poMatchStatus';statusCell.className='ap-po-match-cell';tr.appendChild(statusCell);}
       if(statusCell.dataset.value!==statusSignature){
@@ -66,12 +96,37 @@
         statusCell.title=doc?.threeWayMatch?.postable===false?'Posting is blocked by the PO matching control.':doc?.threeWayMatch?.postable===true?'PO matching control is satisfied.':'';
       }
     });
+    return true;
   }
 
-  let timer=null;
-  const schedule=()=>{clearTimeout(timer);timer=setTimeout(enhance,30);};
-  new MutationObserver(schedule).observe(document.body,{childList:true,subtree:true});
-  window.addEventListener('popstate',schedule);
-  document.addEventListener('click',event=>{if(event.target?.closest?.("a[href='/ap/bills'],.grid-reset[data-grid='apBillGrid'],.grid-view-select[data-grid='apBillGrid']"))setTimeout(schedule,50);},true);
-  schedule();
+  function scheduleRender(delay=30){clearTimeout(renderTimer);renderTimer=setTimeout(()=>{if(!enhance()&&isBillsList())scheduleRender(80);},delay);}
+
+  function enterBillsRoute(){
+    if(!isBillsList())return;
+    setActiveNavigation();
+    scheduleRender(20);
+    fetchBills();
+    clearTimeout(routeRepairTimer);
+    routeRepairTimer=setTimeout(()=>{
+      if(isBillsList()&&!document.getElementById('apBillGrid')){
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        setTimeout(()=>{setActiveNavigation();scheduleRender(20);fetchBills();},80);
+      }
+    },250);
+  }
+
+  function observeRoute(){
+    const path=location.pathname;
+    if(path!==lastPath){lastPath=path;if(isBillsList())enterBillsRoute();}
+    else if(isBillsList())scheduleRender(20);
+  }
+
+  new MutationObserver(observeRoute).observe(document.getElementById('app')||document.body,{childList:true,subtree:true});
+  window.addEventListener('popstate',()=>setTimeout(enterBillsRoute,0));
+  document.addEventListener('click',event=>{
+    const billsLink=event.target?.closest?.("a[href='/ap/bills']");
+    if(billsLink)setTimeout(enterBillsRoute,0);
+    if(event.target?.closest?.(".grid-reset[data-grid='apBillGrid'],.grid-view-select[data-grid='apBillGrid']"))setTimeout(()=>{scheduleRender(30);fetchBills();},80);
+  },true);
+  enterBillsRoute();
 })();
