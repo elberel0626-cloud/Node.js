@@ -6,12 +6,41 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 const generatedName='.server-po-reporting-runtime.js';
 const generatedPath=path.join(here,generatedName);
 
-function replaceOnce(source,oldText,newText,label){
+function replaceOnceOrAlready(source,oldText,newText,label,{required=true}={}){
+ if(source.includes(newText))return source;
  const first=source.indexOf(oldText);
- if(first<0)throw new Error(`Purchase Order reporting integration failed: ${label} was not found.`);
+ if(first<0){
+  if(required)throw new Error(`Purchase Order reporting integration failed: ${label} was not found.`);
+  return source;
+ }
  if(source.indexOf(oldText,first+oldText.length)>=0)throw new Error(`Purchase Order reporting integration failed: ${label} matched more than once.`);
  return source.slice(0,first)+newText+source.slice(first+oldText.length);
 }
+
+function replaceFunctionByBoundary(source,startMarker,nextMarker,newText,label){
+ if(source.includes("if(fullyComplete)next='Closed';")&&source.includes("const receiptRequired=typeof poReceiptRequired==='function'"))return source;
+ const start=source.indexOf(startMarker);
+ if(start<0)throw new Error(`Purchase Order reporting integration failed: ${label} start was not found.`);
+ const end=source.indexOf(nextMarker,start);
+ if(end<0)throw new Error(`Purchase Order reporting integration failed: ${label} end was not found.`);
+ return source.slice(0,start)+newText+source.slice(end);
+}
+
+const refreshPoStatusReplacement=`function refreshPoStatus(po, action='Refresh Status', note=''){
+  const lines=purchaseOrderLines.filter(l=>l.poId===po.id);
+  if(['Draft','Saved','Cancelled','Voided'].includes(po.status)) return recalcPo(po);
+  const receiptRequired=typeof poReceiptRequired==='function'?poReceiptRequired(po):(purchaseOrderTypes.find(type=>type.id===po.poType)?.requireReceipt!==false);
+  const ordered=lines.reduce((s,l)=>s+Math.max(0,Number(l.qtyOrdered||0)-Number(l.qtyCancelled||0)),0);
+  const received=lines.reduce((s,l)=>s+Number(l.qtyReceived||0),0);
+  const billed=lines.reduce((s,l)=>s+Math.max(0,Number(l.qtyBilled||0)-Number(l.qtyVarianceBilled||0)),0);
+  const fullyComplete=lines.length>0&&(ordered<=0||(receiptRequired?received+0.000001>=ordered:billed+0.000001>=ordered));
+  if(po.status==='Closed'&&!fullyComplete)return recalcPo(po);
+  let next='Open';
+  if(fullyComplete)next='Closed';
+  else if(receiptRequired&&received>0)next='Partially Received';
+  if(po.status!==next)setPoStatus(po,next,action,note||((next==='Closed'&&receiptRequired)?'All required purchase order quantities were received.':''));
+  return recalcPo(po);
+}`;
 
 const operationalReportingBlock=String.raw`
 function poReportMoney(value){return Number(Number(value||0).toFixed(2));}
@@ -20,14 +49,14 @@ function poReportPrepaymentSummary(po){
  const rows=poPrepayments.filter(row=>row.poId===po.id&&row.status!=='Voided');
  let total=0,applied=0,available=0;
  for(const row of rows){
-  const amount=Number(row.amount||0),applications=poPrepaymentApplications.filter(item=>item.prepaymentId===row.id).reduce((sum,item)=>sum+Number(item.appliedAmount||0),0),used=Number(row.appliedAmount??applications),remaining=row.remainingBalance===undefined?Math.max(0,amount-used):Math.max(0,Number(row.remainingBalance||0));
+  const amount=Number(row.amount||0),applicationTotal=poPrepaymentApplications.filter(item=>item.prepaymentId===row.id).reduce((sum,item)=>sum+Number(item.appliedAmount||0),0),used=Number(row.appliedAmount??applicationTotal),remaining=row.remainingBalance===undefined?Math.max(0,amount-used):Math.max(0,Number(row.remainingBalance||0));
   total+=amount;applied+=used;available+=remaining;
  }
  return{prepaymentCount:rows.length,prepaymentNumbers:rows.map(row=>row.prepaymentNumber||row.id).filter(Boolean),prepaymentTotal:poReportMoney(total),prepaymentApplied:poReportMoney(applied),prepaymentAvailable:poReportMoney(available)};
 }
 function buildPurchaseOperationalReports(){
  purchaseOrders.forEach(po=>refreshPoStatus(po,'Receipt Completion Status','Automatically close fully received purchase orders.'));
- for(const poLine of purchaseOrderLines){try{synchronizeReceiptBilledQuantities(poLine);}catch{}}
+ if(typeof synchronizeReceiptBilledQuantities==='function')for(const poLine of purchaseOrderLines){try{synchronizeReceiptBilledQuantities(poLine);}catch{}}
  const activeReceipts=purchaseReceipts.filter(receipt=>!['Voided','Cancelled'].includes(receipt.status));
  const receiptLines=[];
  for(const receipt of activeReceipts){
@@ -61,54 +90,34 @@ function buildPurchaseOperationalReports(){
 `;
 
 export function applyPurchaseOrderReportingPatch(source){
- source=replaceOnce(source,
-`function refreshPoStatus(po, action='Refresh Status', note=''){
-  const lines=purchaseOrderLines.filter(l=>l.poId===po.id);
-  if(['Draft','Saved','Closed','Cancelled','Voided'].includes(po.status)) return recalcPo(po);
-  const ordered=lines.reduce((s,l)=>s+Math.max(0,Number(l.qtyOrdered||0)-Number(l.qtyCancelled||0)),0);
-  const received=lines.reduce((s,l)=>s+Number(l.qtyReceived||0),0);
-  let next='Open';
-  if(ordered>0&&received>=ordered) next='Received';
-  else if(received>0) next='Partially Received';
-  if(po.status!==next) setPoStatus(po,next,action,note);
-  return recalcPo(po);
-}`,
-`function refreshPoStatus(po, action='Refresh Status', note=''){
-  const lines=purchaseOrderLines.filter(l=>l.poId===po.id);
-  if(['Draft','Saved','Cancelled','Voided'].includes(po.status)) return recalcPo(po);
-  const receiptRequired=typeof poReceiptRequired==='function'?poReceiptRequired(po):(purchaseOrderTypes.find(type=>type.id===po.poType)?.requireReceipt!==false);
-  const ordered=lines.reduce((s,l)=>s+Math.max(0,Number(l.qtyOrdered||0)-Number(l.qtyCancelled||0)),0);
-  const received=lines.reduce((s,l)=>s+Number(l.qtyReceived||0),0);
-  const billed=lines.reduce((s,l)=>s+Math.max(0,Number(l.qtyBilled||0)-Number(l.qtyVarianceBilled||0)),0);
-  const fullyComplete=lines.length>0&&(ordered<=0||(receiptRequired?received+0.000001>=ordered:billed+0.000001>=ordered));
-  if(po.status==='Closed'&&!fullyComplete)return recalcPo(po);
-  let next='Open';
-  if(fullyComplete)next='Closed';
-  else if(receiptRequired&&received>0)next='Partially Received';
-  if(po.status!==next)setPoStatus(po,next,action,note||((next==='Closed'&&receiptRequired)?'All required purchase order quantities were received.':''));
-  return recalcPo(po);
-}`,'PO closure on receipt completion');
- source=replaceOnce(source,
-"const eligible=new Set(['Open','Partially Received','Received','Partially Billed']); const vendorPos=purchaseOrders.filter(p=>p.vendorId===vendor.id&&eligible.has(p.status));",
-"const eligible=new Set(['Open','Partially Received','Received','Partially Billed']); const vendorPos=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>p.vendorId===vendor.id&&(eligible.has(p.status)||(p.status==='Closed'&&billableLinesForPo(p).length>0)));",
-'incoming PO matcher keeps closed received PO billable');
- source=replaceOnce(source,
-"const matchingIncomingPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&po.vendorId===selectedIncomingVendor.id&&allowedIncomingPoStatuses.has(po.status));",
-"const matchingIncomingPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&po.vendorId===selectedIncomingVendor.id&&(allowedIncomingPoStatuses.has(po.status)||(po.status==='Closed'&&billableLinesForPo(po).length>0)));",
-'incoming bill vendor validation keeps closed received PO billable');
- source=replaceOnce(source,
-"const sameNumberPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&allowedIncomingPoStatuses.has(po.status));",
-"const sameNumberPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&(allowedIncomingPoStatuses.has(po.status)||(po.status==='Closed'&&billableLinesForPo(po).length>0)));",
-'incoming bill same-number validation keeps closed received PO billable');
- source=replaceOnce(source,
-"let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>allowed.has(p.status)||receiptUnbilledLines('').some(l=>l.poId===p.id));",
-"let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>allowed.has(p.status)||billableLinesForPo(p).length>0);",
-'PO lookup keeps operationally closed PO available for vouching');
- source=replaceOnce(source,'\nseedPurchaseOrders();',`\n${operationalReportingBlock}\nseedPurchaseOrders();`,'PO operational report builder');
- source=replaceOnce(source,
-"if(method==='GET'&&pathname==='/api/purchase-orders/reports'){",
-"if(method==='GET'&&pathname==='/api/purchase-orders/reports/operational'){requireAuthenticated(req);return json(res,200,buildPurchaseOperationalReports());}\n if(method==='GET'&&pathname==='/api/purchase-orders/reports'){",
-'PO operational reporting API');
+ source=replaceFunctionByBoundary(source,"function refreshPoStatus(po, action='Refresh Status', note=''){","\nfunction receiptLinesForPo",refreshPoStatusReplacement,'PO status function');
+ source=replaceOnceOrAlready(source,
+  "const vendorPos=purchaseOrders.filter(p=>p.vendorId===vendor.id&&eligible.has(p.status))",
+  "const vendorPos=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>p.vendorId===vendor.id&&(eligible.has(p.status)||(p.status==='Closed'&&billableLinesForPo(p).length>0)))",
+  'incoming PO matcher keeps closed received PO billable',{required:false});
+ source=replaceOnceOrAlready(source,
+  "const matchingIncomingPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&po.vendorId===selectedIncomingVendor.id&&allowedIncomingPoStatuses.has(po.status));",
+  "const matchingIncomingPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&po.vendorId===selectedIncomingVendor.id&&(allowedIncomingPoStatuses.has(po.status)||(po.status==='Closed'&&billableLinesForPo(po).length>0)));",
+  'incoming bill vendor validation keeps closed received PO billable',{required:false});
+ source=replaceOnceOrAlready(source,
+  "const sameNumberPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&allowedIncomingPoStatuses.has(po.status));",
+  "const sameNumberPo=purchaseOrders.map(po=>refreshPoStatus(po)).find(po=>(String(po.poNumber||po.id).toLowerCase()===normalizedIncomingPo||String(po.id).toLowerCase()===normalizedIncomingPo)&&(allowedIncomingPoStatuses.has(po.status)||(po.status==='Closed'&&billableLinesForPo(po).length>0)));",
+  'incoming bill same-number validation keeps closed received PO billable',{required:false});
+ source=replaceOnceOrAlready(source,
+  "let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>allowed.has(p.status)||receiptUnbilledLines('').some(l=>l.poId===p.id));",
+  "let rows=purchaseOrders.map(p=>refreshPoStatus(p)).filter(p=>allowed.has(p.status)||billableLinesForPo(p).length>0);",
+  'PO lookup keeps operationally closed PO available for vouching',{required:false});
+ if(!source.includes('function buildPurchaseOperationalReports(){')){
+  const marker='\nseedPurchaseOrders();',at=source.indexOf(marker);
+  if(at<0)throw new Error('Purchase Order reporting integration failed: PO report insertion marker was not found.');
+  source=source.slice(0,at)+'\n'+operationalReportingBlock+source.slice(at);
+ }
+ if(!source.includes("pathname==='/api/purchase-orders/reports/operational'")){
+  const marker="if(method==='GET'&&pathname==='/api/purchase-orders/reports'){",at=source.indexOf(marker);
+  if(at<0)throw new Error('Purchase Order reporting integration failed: PO reports API marker was not found.');
+  const route="if(method==='GET'&&pathname==='/api/purchase-orders/reports/operational'){requireAuthenticated(req);return json(res,200,buildPurchaseOperationalReports());}\n ";
+  source=source.slice(0,at)+route+source.slice(at);
+ }
  return source;
 }
 
