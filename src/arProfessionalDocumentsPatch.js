@@ -31,12 +31,12 @@ export function applyArProfessionalDocumentsPatch(source){
   const documents=allCustomerDocuments.filter(d=>['Invoice','Debit Memo','Credit Memo'].includes(d.type)&&d.posted&&d.status==='Open'&&Math.abs(Number(d.balance||0))>0);
   const pdf=generateStatementPdf({customer,documents,allDocuments:allCustomerDocuments,statementDate,companyName:companyName()});
   const fileName=\`Statement-\${String(customer.id).replace(/[^a-zA-Z0-9._-]/g,'_')}-\${statementDate}.pdf\`;
-  res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':\`${query.download==='1'?'attachment':'inline'}; filename="\${fileName}"\`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(pdf);return;
+  res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':\`\${query.download==='1'?'attachment':'inline'}; filename="\${fileName}"\`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(pdf);return;
  }
  if(method==='GET'&&/^\\/api\\/ar\\/documents\\/[^/]+\\/pdf$/.test(pathname)){
   normalizeAllArStatuses();const parts=pathname.split('/'),id=decodeURIComponent(parts.at(-2)),invoice=arDocuments.find(d=>d.id===id&&['Invoice','Credit Memo','Debit Memo'].includes(d.type));if(!invoice)return json(res,404,{error:'AR document not found'});
   const customer=customers.find(c=>c.id===invoice.customerId)||{};const pdf=generateInvoicePdf({invoice,customer,companyName:companyName()});const fileName=\`\${String(invoice.type||'Invoice').replace(/\\s+/g,'-')}-\${String(invoice.id).replace(/[^a-zA-Z0-9._-]/g,'_')}.pdf\`;
-  res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':\`${query.download==='1'?'attachment':'inline'}; filename="\${fileName}"\`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(pdf);return;
+  res.writeHead(200,{'Content-Type':'application/pdf','Content-Length':pdf.length,'Content-Disposition':\`\${query.download==='1'?'attachment':'inline'}; filename="\${fileName}"\`,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});res.end(pdf);return;
  }
  if(method==='POST'&&pathname==='/api/ar/invoices/send-statement'){
   requireAuthenticated(req);normalizeAllArStatuses();const b=await body(req),customer=customers.find(c=>c.id===b.customerId);if(!customer)return json(res,404,{error:'Customer not found'});if(!customer.email)return json(res,400,{error:'Customer email is missing. Please update the customer profile before sending the statement.'});
