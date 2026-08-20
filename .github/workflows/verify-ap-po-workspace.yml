@@ -18,6 +18,7 @@ on:
       - test/apIncomingConversionPatch.test.js
       - test/incomingReviewSavePatch.test.js
       - test/apRuntimeReliabilityPatch.test.js
+      - test/poMatchingPermissions.test.js
       - e2e/ap-po-incoming-reliability.spec.js
       - package.json
       - .github/workflows/verify-ap-po-workspace.yml
@@ -25,6 +26,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   verify-ap-po-workspace:
@@ -41,9 +43,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Syntax check
-        run: npm run check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npm run check
+          rc=$?
+          state=success
+          description='Syntax and startup composition passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Syntax or startup composition failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/syntax' -f description="$description" >/dev/null
+          exit "$rc"
       - name: AP PO focused regressions
-        run: node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/purchaseOrderPreferencesPatch.test.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
+          rc=$?
+          state=success
+          description='AP incoming and PO unit regressions passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming or PO unit regression failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/regression' -f description="$description" >/dev/null
+          exit "$rc"
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - name: Prepare ephemeral test login
@@ -51,4 +73,14 @@ jobs:
           echo "E2E_ADMIN_EMAIL=ap-po-e2e@example.com" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$(openssl rand -hex 20)" >> "$GITHUB_ENV"
       - name: Browser save and PO-link flow
-        run: npx playwright test e2e/ap-po-incoming-reliability.spec.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js
+          rc=$?
+          state=success
+          description='Incoming save/create and PO select/save passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Browser incoming-save or PO-link flow failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser' -f description="$description" >/dev/null
+          exit "$rc"
