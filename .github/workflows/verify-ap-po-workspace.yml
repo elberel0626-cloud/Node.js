@@ -9,6 +9,7 @@ on:
       - public/apProfessionalMatchingV2.js
       - public/apNewBillProfessionalPo.js
       - public/apPoVendorAutoRefresh.js
+      - public/apBillMatchStatusGlParity.js
       - public/index.html
       - src/apInvoiceEvaluation.js
       - src/apIncomingConversionPatch.js
@@ -20,6 +21,7 @@ on:
       - test/apProfessionalPoWorkspace.test.js
       - test/apProfessionalMatchingV2.test.js
       - test/apNewBillProfessionalPo.test.js
+      - test/apBillMatchStatusGlParity.test.js
       - test/apIncomingConversionPatch.test.js
       - test/incomingReviewSavePatch.test.js
       - test/apRuntimeReliabilityPatch.test.js
@@ -65,11 +67,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apNewBillProfessionalPo.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
+          node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apNewBillProfessionalPo.test.js test/apBillMatchStatusGlParity.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
           rc=$?
           state=success
-          description='AP incoming, signed GL, new bill PO, and PO unit regressions passed'
-          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed GL, new bill PO, or PO unit regression failed'; fi
+          description='AP incoming, signed GL, live match status, GL detail, and PO regressions passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP live match status, GL detail, incoming, signed GL, or PO regression failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/regression' -f description="$description" >/dev/null
           exit "$rc"
       - name: Install Chromium
@@ -86,8 +88,8 @@ jobs:
           npx playwright test e2e/ap-new-bill-professional-po.spec.js
           rc=$?
           state=success
-          description='New AP Bill vendor selection automatically refreshed eligible POs and applied PO lines'
-          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill vendor-to-PO automatic refresh failed'; fi
+          description='New AP Bill shows live PO status and GL code before save'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill live PO status or GL code before save failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-bill' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser incoming save and create
