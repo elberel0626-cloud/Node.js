@@ -32,7 +32,7 @@
   `;
   document.head.appendChild(style);
 
-  let latestDocs=[],loadSequence=0,renderTimer=null,routeRepairTimer=null,lastPath=location.pathname;
+  let latestDocs=[],loadSequence=0,renderTimer=null,lastPath=location.pathname;
 
   async function fetchBills(){
     const sequence=++loadSequence;
@@ -106,13 +106,6 @@
     setActiveNavigation();
     scheduleRender(20);
     fetchBills();
-    clearTimeout(routeRepairTimer);
-    routeRepairTimer=setTimeout(()=>{
-      if(isBillsList()&&!document.getElementById('apBillGrid')){
-        window.dispatchEvent(new PopStateEvent('popstate'));
-        setTimeout(()=>{setActiveNavigation();scheduleRender(20);fetchBills();},80);
-      }
-    },250);
   }
 
   function observeRoute(){
@@ -124,8 +117,13 @@
   new MutationObserver(observeRoute).observe(document.getElementById('app')||document.body,{childList:true,subtree:true});
   window.addEventListener('popstate',()=>setTimeout(enterBillsRoute,0));
   document.addEventListener('click',event=>{
-    const billsLink=event.target?.closest?.("a[href='/ap/bills']");
-    if(billsLink)setTimeout(enterBillsRoute,0);
+    const billsLink=event.target?.closest?.("#ar-nav a[href='/ap/bills']");
+    if(billsLink&&!isBillsList()&&event.button===0&&!event.metaKey&&!event.ctrlKey&&!event.shiftKey&&!event.altKey){
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      window.location.assign(BILLS_PATH);
+      return;
+    }
     if(event.target?.closest?.(".grid-reset[data-grid='apBillGrid'],.grid-view-select[data-grid='apBillGrid']"))setTimeout(()=>{scheduleRender(30);fetchBills();},80);
   },true);
   enterBillsRoute();
