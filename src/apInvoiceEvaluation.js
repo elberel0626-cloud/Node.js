@@ -3,7 +3,12 @@ export const AP_INVOICE_CLASSIFICATIONS = [
 ];
 const round = value => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
 export function calculateApBillTotals(lines = [], { taxTotal = 0, freight = 0 } = {}) {
-  const calculatedLines = lines.map(line => { const quantity=Number(line.qty ?? line.quantity ?? 0),unitCost=Number(line.unitCost ?? 0),discountAmount=round(line.discountAmount);if(!Number.isFinite(quantity)||!Number.isFinite(unitCost)||quantity<0||unitCost<0||discountAmount<0)throw new Error('AP Bill quantity, unit cost, and discount must be non-negative numbers.');const extendedCost=round(quantity*unitCost),amount=round(extendedCost-discountAmount);return {...line,qty:quantity,unitCost,discountAmount,extendedCost,amount}; });
+  const calculatedLines = lines.map(line => {
+    const quantity=Number(line.qty ?? line.quantity ?? 0),unitCost=Number(line.unitCost ?? 0),discountAmount=round(line.discountAmount);
+    if(!Number.isFinite(quantity)||!Number.isFinite(unitCost)||!Number.isFinite(discountAmount)||quantity<0||discountAmount<0)throw new Error('AP Bill quantity and discount must be non-negative numbers. Unit cost may be negative for invoice credit or reconciliation lines.');
+    const extendedCost=round(quantity*unitCost),amount=round(extendedCost-discountAmount);
+    return {...line,qty:quantity,unitCost,discountAmount,extendedCost,amount};
+  });
   const subtotal=round(calculatedLines.reduce((sum,line)=>sum+line.extendedCost,0));
   const discountTotal=round(calculatedLines.reduce((sum,line)=>sum+line.discountAmount,0));
   const netLines=round(calculatedLines.reduce((sum,line)=>sum+line.amount,0));
