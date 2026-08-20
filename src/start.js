@@ -6,13 +6,15 @@ import { normalizeSampleUnreleasedDocuments } from './sampleDataRuntime.js';
 import { prepareCashPurchaseApplicationServer } from './cashPurchaseApplicationsPatch.js';
 import { prepareIncomingPurchaseOrderWorkflowServer } from './incomingPurchaseOrderWorkflowPatch.js';
 import { preparePurchaseOrderPreferencesServer } from './purchaseOrderPreferencesPatch.js';
+import { preparePurchaseOrderReportingServer } from './purchaseOrderReportingPatch.js';
 
 normalizeSampleUnreleasedDocuments({ arDocuments, apDocuments });
 applyStatementClassification(glAccounts);
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
 const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(cashPurchaseServerModule);
 const poPreferencesServerModule = await preparePurchaseOrderPreferencesServer(incomingPoServerModule);
-const poPreferencesServerUrl = new URL(poPreferencesServerModule, import.meta.url);
-execFileSync(process.execPath, ['--check', fileURLToPath(poPreferencesServerUrl)], { stdio: 'inherit' });
-await import(poPreferencesServerModule);
+const poReportingServerModule = await preparePurchaseOrderReportingServer(poPreferencesServerModule);
+const poReportingServerUrl = new URL(poReportingServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(poReportingServerUrl)], { stdio: 'inherit' });
+await import(poReportingServerModule);
 applyStatementClassification(glAccounts);
