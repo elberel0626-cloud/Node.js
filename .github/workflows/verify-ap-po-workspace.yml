@@ -72,15 +72,28 @@ jobs:
         run: |
           echo "E2E_ADMIN_EMAIL=ap-po-e2e@example.com" >> "$GITHUB_ENV"
           echo "E2E_ADMIN_PASSWORD=$(openssl rand -hex 20)" >> "$GITHUB_ENV"
-      - name: Browser save and PO-link flow
+      - name: Browser incoming save and create
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          npx playwright test e2e/ap-po-incoming-reliability.spec.js
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'incoming review saves'
           rc=$?
           state=success
-          description='Incoming save/create and PO select/save passed'
-          if [ "$rc" -ne 0 ]; then state=failure; description='Browser incoming-save or PO-link flow failed'; fi
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser' -f description="$description" >/dev/null
+          description='Incoming review save and AP Bill create passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Incoming review save or AP Bill create failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-incoming' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser eligible PO select and save
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'AP bill shows vendor PO'
+          rc=$?
+          state=success
+          description='Eligible vendor PO displayed, selected, and saved'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Eligible vendor PO display/select/save failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-po-link' -f description="$description" >/dev/null
           exit "$rc"
