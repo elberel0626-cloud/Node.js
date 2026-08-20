@@ -11,7 +11,7 @@ import { applyApIncomingConversionPatch } from '../src/apIncomingConversionPatch
 import { applyIncomingReviewSavePatch } from '../src/incomingReviewSavePatch.js';
 import { applyApRuntimeReliabilityPatch } from '../src/apRuntimeReliabilityPatch.js';
 
-test('final AP runtime initializes incoming review state, previews unsaved PO matches, posts signed AP lines correctly, and uses account 2010 for AP control',async()=>{
+test('final AP runtime protects incoming review, AP control, PO preview, signed GL, and legacy bill list serialization',async()=>{
   const base=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   let source=applyIncomingPurchaseOrderWorkflowPatch(base);source=applyPurchaseOrderPreferencesPatch(source);source=applyPurchaseOrderReportingPatch(source);source=applyApIncomingConversionPatch(source);source=applyIncomingReviewSavePatch(source);source=applyApRuntimeReliabilityPatch(source);
   assert.match(source,/accountsPayable:'2010',apTrade:'2010',poRni:'2020'/);
@@ -30,5 +30,9 @@ test('final AP runtime initializes incoming review state, previews unsaved PO ma
   assert.match(source,/pathname==='\/api\/ap\/po-match-preview'/);
   assert.match(source,/evaluatePoThreeWayMatch\(preview\)/);
   assert.match(source,/status:b\.status\|\|'Draft'/);
+  assert.match(source,/doc\.lines=Array\.isArray\(doc\.lines\)\?doc\.lines\.map/);
+  assert.match(source,/AP bill PO match serialization failed/);
+  assert.match(source,/serializationError:true/);
+  assert.match(source,/threeWayMatch:serializedPoMatch,matchStatus:serializedPoMatch\.status/);
   const tmp=await mkdtemp(path.join(os.tmpdir(),'ap-runtime-reliability-')),target=path.join(tmp,'server.mjs');try{await writeFile(target,source);execFileSync(process.execPath,['--check',target],{stdio:'pipe'});}finally{await rm(tmp,{recursive:true,force:true});}
 });
