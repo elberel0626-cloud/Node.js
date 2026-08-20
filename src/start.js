@@ -12,6 +12,7 @@ import { prepareApIncomingConversionServer } from './apIncomingConversionPatch.j
 import { prepareIncomingReviewSaveServer } from './incomingReviewSavePatch.js';
 import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.js';
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
+import { prepareFinancialReportMappingServer } from './financialReportMappingPatch.js';
 
 async function makePoPreferencesRuntimeInitializationSafe(modulePath){
   const moduleUrl=new URL(modulePath,import.meta.url);
@@ -38,7 +39,8 @@ const apIncomingConversionServerModule = await prepareApIncomingConversionServer
 const incomingReviewSaveServerModule = await prepareIncomingReviewSaveServer(apIncomingConversionServerModule);
 const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer(incomingReviewSaveServerModule);
 const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apRuntimeReliabilityServerModule);
-const arProfessionalDocumentsServerUrl = new URL(arProfessionalDocumentsServerModule, import.meta.url);
-execFileSync(process.execPath, ['--check', fileURLToPath(arProfessionalDocumentsServerUrl)], { stdio: 'inherit' });
-await import(arProfessionalDocumentsServerModule);
+const financialReportMappingServerModule = await prepareFinancialReportMappingServer(arProfessionalDocumentsServerModule);
+const financialReportMappingServerUrl = new URL(financialReportMappingServerModule, import.meta.url);
+execFileSync(process.execPath, ['--check', fileURLToPath(financialReportMappingServerUrl)], { stdio: 'inherit' });
+await import(financialReportMappingServerModule);
 applyStatementClassification(glAccounts);
