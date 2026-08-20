@@ -1,0 +1,38 @@
+name: Verify AP PO Workspace
+
+on:
+  push:
+    branches: [Development]
+    paths:
+      - public/apPurchaseOrderWorkspace.js
+      - public/apIncomingCreateBillFix.js
+      - public/index.html
+      - src/apIncomingConversionPatch.js
+      - src/start.js
+      - test/apProfessionalPoWorkspace.test.js
+      - test/apIncomingConversionPatch.test.js
+      - package.json
+      - .github/workflows/verify-ap-po-workspace.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-ap-po-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax check
+        run: npm run check
+      - name: AP PO focused regressions
+        run: node --test test/apProfessionalPoWorkspace.test.js test/apIncomingConversionPatch.test.js test/purchaseOrderPreferencesPatch.test.js
