@@ -8,6 +8,13 @@ async function jsonFetch(page,path,method='GET',body){
   },{path,method,body});
 }
 
+async function openNewBillLines(page){
+  await openView(page,'/ap/bills/new','#bVendorNumber');
+  await page.locator(".erp-tabs [data-tab='billLines']").click();
+  const table=page.locator('#billLines .compact-ap-lines');await expect(table).toBeVisible();
+  return table;
+}
+
 async function selectVendorAndPo(page){
   await openView(page,'/ap/bills/new','#bVendorNumber');
   await page.locator(".erp-tabs [data-tab='purchaseOrder']").click();
@@ -30,14 +37,22 @@ test('unsaved AP PO preview API returns server 3-way status',async({page})=>{
   expect(result.body.lines.length).toBeGreaterThan(0);
 });
 
-test('new AP line grid shows GL code and account outline before save',async({page})=>{
-  await openView(page,'/ap/bills/new','#bVendorNumber');
-  await page.locator(".erp-tabs [data-tab='billLines']").click();
-  const table=page.locator('#billLines .compact-ap-lines');await expect(table).toBeVisible();
+test('new AP line grid labels GL code before save',async({page})=>{
+  const table=await openNewBillLines(page);
   await expect(table.locator('tr').first()).toContainText('GL Code');
   await expect(table.locator('tr').first()).toContainText('GL Account Description');
+});
+
+test('new AP line grid has default GL account before save',async({page})=>{
+  await openNewBillLines(page);
   await expect(page.locator(".ln-exp[data-i='0']")).not.toHaveValue('');
-  await expect(page.locator('#billLines .ap-effective-gl').first()).toBeVisible();
+});
+
+test('new AP line grid shows effective GL annotation before save',async({page})=>{
+  await openNewBillLines(page);
+  const note=page.locator('#billLines .ap-effective-gl').first();
+  await expect(note).toBeVisible();
+  await expect(note).toContainText(/GL:|PO posting basis:/);
 });
 
 test('new AP PO selection displays same server match status before save',async({page})=>{
