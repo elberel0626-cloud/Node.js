@@ -31,7 +31,7 @@ permissions:
 jobs:
   verify-ap-po-workspace:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,17 +84,30 @@ jobs:
           if [ "$rc" -ne 0 ]; then state=failure; description='Incoming review save or AP Bill create failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-incoming' -f description="$description" >/dev/null
           exit "$rc"
+      - name: Browser eligible PO lookup
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'eligible vendor PO lookup returns'
+          rc=$?
+          state=success
+          description='Eligible-only vendor PO lookup returned PO-1001'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Eligible-only vendor PO lookup failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-po-api' -f description="$description" >/dev/null
+          exit "$rc"
       - name: Browser eligible PO display
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'eligible vendor PO appears'
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'eligible vendor PO renders'
           rc=$?
           state=success
           description='Eligible vendor PO appears in AP Purchase Order tab'
-          if [ "$rc" -ne 0 ]; then state=failure; description='Eligible vendor PO did not appear in AP tab'; fi
+          if [ "$rc" -ne 0 ]; then state=failure; description='Eligible vendor PO did not render in AP tab'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-po-visible' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser eligible PO select and save
