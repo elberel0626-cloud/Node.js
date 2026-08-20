@@ -3,6 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 
 test.describe.configure({mode:'serial'});
 async function api(page,path,method='GET',body){return page.evaluate(async({path,method,body})=>{const response=await fetch(path,{method,headers:body!==undefined?{'Content-Type':'application/json'}:undefined,body:body!==undefined?JSON.stringify(body):undefined,credentials:'same-origin',cache:'no-store'}),text=await response.text();let parsed={};try{parsed=text?JSON.parse(text):{}}catch{parsed={error:text}}return{status:response.status,body:parsed};},{path,method,body});}
+async function createPoVendorBill(page){const invoice=`PO-LINK-${crypto.randomUUID()}`;const created=await api(page,'/api/ap/documents','POST',{type:'Bill',vendorId:'VEND-1004',date:'2026-08-20',dueDate:'2026-09-19',vendorRef:invoice,invoiceNumber:invoice,branch:'100',terms:'NET30',taxTotal:0,freight:0,lines:[{inventoryId:'ITEM-1001',description:'Ink from PO',qty:10,uom:'EA',unitCost:80,discountAmount:0,expenseAccount:'5110',branch:'100'}]});expect(created.status,JSON.stringify(created.body)).toBe(201);return created.body;}
 
 test('incoming review saves with PO removed and creates AP Bill',async({page})=>{
   const pdf=await PDFDocument.create();pdf.addPage([300,200]);const bytes=Buffer.from(await pdf.save()),ref=`NOPO-${crypto.randomUUID()}`;
@@ -14,14 +15,18 @@ test('incoming review saves with PO removed and creates AP Bill',async({page})=>
   expect(created.status,JSON.stringify(created.body)).toBe(201);expect(created.body.billId).toBeTruthy();expect(created.body.bill.lines[0].poNumber||'').toBe('');expect(created.body.bill.invoicePdfAttached).toBe(true);
 });
 
-test('AP bill shows vendor PO, selects it, saves it, and becomes waiting for receipt',async({page})=>{
-  const invoice=`PO-LINK-${crypto.randomUUID()}`;
-  const created=await api(page,'/api/ap/documents','POST',{type:'Bill',vendorId:'VEND-1004',date:'2026-08-20',dueDate:'2026-09-19',vendorRef:invoice,invoiceNumber:invoice,branch:'100',terms:'NET30',taxTotal:0,freight:0,lines:[{inventoryId:'ITEM-1001',description:'Ink from PO',qty:10,uom:'EA',unitCost:80,discountAmount:0,expenseAccount:'5110',branch:'100'}]});
-  expect(created.status,JSON.stringify(created.body)).toBe(201);const billId=created.body.id;
-  const candidates=await api(page,'/api/purchase-orders/lookup?vendorNumber=VEND-1004');expect(candidates.status,JSON.stringify(candidates.body)).toBe(200);const po=candidates.body.find(row=>row.poNumber==='PO-1001');expect(po).toBeTruthy();
-  await openView(page,`/ap/bills/${billId}`,'#bPost');await expect(page.locator(".erp-tabs [data-tab='purchaseOrder']")).toBeVisible();await page.locator(".erp-tabs [data-tab='purchaseOrder']").click();
+test('eligible vendor PO appears in AP bill Purchase Order tab',async({page})=>{
+  const bill=await createPoVendorBill(page),billId=bill.id;
+  const candidates=await api(page,'/api/purchase-orders/lookup?vendorNumber=VEND-1004');expect(candidates.status,JSON.stringify(candidates.body)).toBe(200);expect(candidates.body.some(row=>row.poNumber==='PO-1001')).toBe(true);expect(candidates.body.every(row=>['Open','Partially Received','Partially Billed','Received','Closed'].includes(row.status))).toBe(true);
+  await openView(page,`/ap/bills/${billId}`,'#bPost');const tab=page.locator(".erp-workspace .erp-tabs [data-tab='purchaseOrder']");await expect(tab).toBeVisible();await tab.click();
+  const workspace=page.locator('#apPoV2');await expect(workspace).toBeVisible();const row=workspace.locator("tr[data-po='PO-1001']");await expect(row).toBeVisible();await expect(row.locator('.poPickV2')).toBeEnabled();
+});
+
+test('eligible vendor PO can be selected and saved on AP bill',async({page})=>{
+  const bill=await createPoVendorBill(page),billId=bill.id;
+  await openView(page,`/ap/bills/${billId}`,'#bPost');const tab=page.locator(".erp-workspace .erp-tabs [data-tab='purchaseOrder']");await expect(tab).toBeVisible();await tab.click();
   const row=page.locator("#apPoV2 tr[data-po='PO-1001']");await expect(row).toBeVisible();const checkbox=row.locator('.poPickV2');await expect(checkbox).toBeEnabled();await checkbox.check();
-  const responsePromise=page.waitForResponse(response=>response.url().endsWith(`/api/ap/documents/${billId}`)&&response.request().method()==='PUT');await page.locator('#poSaveV2').click();const response=await responsePromise;expect(response.status()).toBe(200);
-  await expect.poll(async()=>{const bill=await api(page,`/api/ap/documents/${billId}`);return bill.body.lines?.[0]?.poNumber||'';}).toBe('PO-1001');
-  const bill=await api(page,`/api/ap/documents/${billId}`);expect(bill.body.threeWayMatch.status).toBe('Waiting for Receipt');expect(bill.body.threeWayMatch.postable).toBe(false);
+  const responsePromise=page.waitForResponse(response=>response.url().endsWith(`/api/ap/documents/${billId}`)&&response.request().method()==='PUT');await page.locator('#poSaveV2').click();const response=await responsePromise;const responseText=await response.text();expect(response.status(),responseText).toBe(200);
+  await expect.poll(async()=>{const current=await api(page,`/api/ap/documents/${billId}`);return current.body.lines?.[0]?.poNumber||'';}).toBe('PO-1001');
+  const current=await api(page,`/api/ap/documents/${billId}`);expect(current.body.threeWayMatch.status).toBe('Waiting for Receipt');expect(current.body.threeWayMatch.postable).toBe(false);
 });
