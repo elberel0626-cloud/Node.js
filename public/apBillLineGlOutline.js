@@ -1,5 +1,32 @@
 (()=>{
   const isApBill=()=>/^\/ap\/(?:bills|approvals)\/[^/]+$/.test(location.pathname);
+
+  // Keep the AP Bill line grid identical on new and saved bills.  The base
+  // stylesheet used to hide Branch, Extended Cost, Discount, GL, PO/receipt,
+  // warehouse/location, tax, and lookup columns only while the bill was new.
+  // That made the entry screen materially different from the saved document.
+  const parityStyle=document.createElement('style');
+  parityStyle.dataset.apBillLineParity='1';
+  parityStyle.textContent=`
+    .new-ap-bill .ap-bill-lines-scroll{
+      display:block!important;
+      width:100%!important;
+      max-width:100%!important;
+      overflow-x:auto!important;
+      overflow-y:visible!important;
+    }
+    .new-ap-bill .compact-ap-lines{
+      width:100%!important;
+      min-width:1500px!important;
+      table-layout:auto!important;
+    }
+    .new-ap-bill .compact-ap-lines th,
+    .new-ap-bill .compact-ap-lines td{
+      display:table-cell!important;
+    }
+  `;
+  document.head.appendChild(parityStyle);
+
   function normalize(){
     if(!isApBill())return;
     const table=document.querySelector('#billLines .compact-ap-lines');
