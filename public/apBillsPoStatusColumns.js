@@ -54,14 +54,17 @@
 
     [...table.querySelectorAll('tr[data-row]')].forEach(tr=>{
       const doc=rows[Number(tr.dataset.row)]||{};
-      const pos=poNumbers(doc),status=matchStatus(doc);
+      const pos=poNumbers(doc),status=matchStatus(doc),poSignature=pos.join('|')||'—',statusSignature=`${status}|${doc?.threeWayMatch?.postable}`;
       let poCell=tr.querySelector("td[data-k='poNumbers']");
       if(!poCell){poCell=document.createElement('td');poCell.dataset.k='poNumbers';poCell.className='ap-po-list-cell';tr.appendChild(poCell);}
-      poCell.innerHTML=pos.length?pos.map(po=>`<a class='link' href='/purchase-orders/orders/${encodeURIComponent(po)}'>${esc(po)}</a>`).join(''):'—';
+      if(poCell.dataset.value!==poSignature){poCell.dataset.value=poSignature;poCell.innerHTML=pos.length?pos.map(po=>`<a class='link' href='/purchase-orders/orders/${encodeURIComponent(po)}'>${esc(po)}</a>`).join(''):'—';}
       let statusCell=tr.querySelector("td[data-k='poMatchStatus']");
       if(!statusCell){statusCell=document.createElement('td');statusCell.dataset.k='poMatchStatus';statusCell.className='ap-po-match-cell';tr.appendChild(statusCell);}
-      statusCell.innerHTML=`<span class='ap-list-match-pill ${statusClass(status)}'>${esc(status)}</span>`;
-      statusCell.title=doc?.threeWayMatch?.postable===false?'Posting is blocked by the PO matching control.':doc?.threeWayMatch?.postable===true?'PO matching control is satisfied.':'';
+      if(statusCell.dataset.value!==statusSignature){
+        statusCell.dataset.value=statusSignature;
+        statusCell.innerHTML=`<span class='ap-list-match-pill ${statusClass(status)}'>${esc(status)}</span>`;
+        statusCell.title=doc?.threeWayMatch?.postable===false?'Posting is blocked by the PO matching control.':doc?.threeWayMatch?.postable===true?'PO matching control is satisfied.':'';
+      }
     });
   }
 
