@@ -22,6 +22,8 @@
       const index=Number(input.dataset.line); lines[index]=lines[index]||{}; lines[index][input.dataset.lineField]=input.value;
     });
     extracted.lines=lines;
+    const poInput=document.querySelector("#invoiceReviewForm [data-field='purchaseOrderNumber']");
+    if(poInput){const po=String(poInput.value||'').trim();extracted.purchaseOrderNumber=po;extracted.poNumber=po;}
     const vendorId=String(document.getElementById('reviewVendorId')?.value||document.getElementById('reviewVendorNumber')?.value||doc.vendorMatch?.vendorId||'').trim().split(/\s+—\s+|\s+-\s+/)[0].trim();
     const vendorName=String(document.getElementById('reviewVendorName')?.value||doc.vendorMatch?.vendorName||'').trim();
     return {
