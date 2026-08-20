@@ -1,16 +1,18 @@
 import { test, expect, openView } from './fixtures/authenticated.js';
 
-test('new AP Bill uses professional PO workspace and applies a vendor PO', async ({ page }) => {
+test('new AP Bill refreshes professional PO workspace whenever vendor is selected', async ({ page }) => {
   await openView(page, '/ap/bills/new', '#bVendorNumber');
-  await page.evaluate(() => {
-    const set=(id,value)=>{const el=document.getElementById(id);el.value=value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));};
-    set('bVendorNumber','VEND-1002');
-    set('bVendorName','Vendor 1002');
-    set('bvend','VEND-1002');
-  });
   await page.locator(".erp-tabs [data-tab='purchaseOrder']").click();
   const workspace=page.locator('#apPoNewV2');
   await expect(workspace).toBeVisible();
+  await expect(workspace).toContainText('Select a vendor to load eligible purchase orders.');
+
+  await page.locator('#bVendorNumber').click();
+  const vendorOption=page.locator('.party-suggestions .erp-lookup-row').filter({hasText:'VEND-1002'}).first();
+  await expect(vendorOption).toBeVisible();
+  await vendorOption.click();
+  await expect(page.locator('#bvend')).toHaveValue('VEND-1002');
+
   await expect(workspace).toContainText('Bill Vendor');
   await expect(workspace).toContainText('VEND-1002');
   await expect(page.locator('#purchaseOrder .po-match-summary')).toBeHidden();
