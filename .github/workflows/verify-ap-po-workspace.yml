@@ -33,7 +33,7 @@ permissions:
 jobs:
   verify-ap-po-workspace:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,8 +64,8 @@ jobs:
           node --test test/apInvoiceNegativeLines.test.js test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/apRuntimeReliabilityPatch.test.js test/poMatchingPermissions.test.js test/purchaseOrderPreferencesPatch.test.js
           rc=$?
           state=success
-          description='AP incoming, signed invoice line, and PO unit regressions passed'
-          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed invoice line, or PO unit regression failed'; fi
+          description='AP incoming, signed GL, and PO unit regressions passed'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP incoming, signed GL, or PO unit regression failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/regression' -f description="$description" >/dev/null
           exit "$rc"
       - name: Install Chromium
@@ -85,6 +85,19 @@ jobs:
           description='Incoming review save and AP Bill create passed, including negative reconciliation lines'
           if [ "$rc" -ne 0 ]; then state=failure; description='Incoming review save or AP Bill create failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-incoming' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser signed AP GL posting
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-po-incoming-reliability.spec.js -g 'negative AP bill lines post as positive GL credits'
+          rc=$?
+          state=success
+          description='Negative AP bill lines posted as positive GL credits and journal balanced'
+          if [ "$rc" -ne 0 ]; then state=failure; description='Signed AP GL debit/credit posting failed'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-signed-gl' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser eligible PO lookup
         if: success()
