@@ -27,13 +27,71 @@ const GROUPS=Object.freeze([
   ['IS','Expense',"NON EBITDA",['6031','6032','6070','6110','6111','6203','6250','6252','6256','6315','6343','6375','6582','6583','6585','6610','6667']],
 ]);
 
+// Geography is the second reporting dimension supplied for the P&L.  Type
+// (SALES / COGS / SG&A / NON EBITDA) remains the primary report group.  The
+// source intentionally contains duplicate account rows for 6315 and 6610;
+// later rows are authoritative, matching the supplied mapping order.
+const PROFIT_LOSS_GEOGRAPHY_GROUPS=Object.freeze([
+  ['Addback',['6203','6343','6375','6610','6667']],
+  ['Allocated',['6687','6688','6689','6690','6691','6692','6693','6694','6695','6696','6697','6698']],
+  ['Amortization',['6031','6032']],
+  ['Bad Debt',['6050']],
+  ['Bank Fees',['6060']],
+  ['BLDG',['6391','6581']],
+  ['Commissions',['6080']],
+  ['Consulting',['6082','6340']],
+  ['Credit Card Fees',['6061']],
+  ['Depreciation',['6110','6111']],
+  ['Employee Benefits',['6210','6242','6243','6346']],
+  ['Freight - All',['5113','6230','6231']],
+  ['HR Services',['6312','6358','6359']],
+  ['Insurance',['6239','6240','6241']],
+  ['Intercompany',['5175']],
+  ['Interest',['6250','6252','6256']],
+  ['Inv Adj',['5109','6012']],
+  ['IT related (not salaries)',['6085','6087','6350']],
+  ['Labor',['5120','5145','5150','5160','5161','5164','6244','6245','6345','6443','6570']],
+  ['Marketing',['6010','6455']],
+  ['Material',['5110','5114','6355']],
+  ['Misc',['6090','6200','6270','6300','6305','6307','6315','6453']],
+  ['Office Supplies',['6310','6460']],
+  ['Other',['5101','5115','5130','5135','6040','6213','6232','6370','6371','6454','6640','6661']],
+  ['Outside Services',['6215']],
+  ['Payroll Taxes',['6571']],
+  ['Phone & Internet',['6631','6632','6633']],
+  ['R&D Material',['5111']],
+  ['Royalty',['5162','6400']],
+  ['Salaries',['6212','6432','6433','6435','6440','6445','6448','6449','6450','6451']],
+  ['Selling Expenses',['6341']],
+  ['Service Dept Exp',['6452']],
+  ['T&E',['6041','6042','6043','6044','6045','6634','6635','6636','6637','6638','6639','6641','6642','6643','6644']],
+  ['Taxes',['6070','6315','6582','6583','6585','6610']],
+  ['Tech Dept Exp',['6011','6342']],
+  ['Temporary Labor',['6361']],
+  ['Warranty',['6680']],
+  ['Consumables',['4012']],
+  ['Equipment',['4008','4010']],
+  ['Installations',['4021']],
+  ['Misc',['4005','4009','4030','4032','4040','4045','4050','4070','4071','4075','4080']],
+  ['Parts & Service',['4020']],
+  ['Sales Discount',['4025']],
+]);
+
+const geographyByCode=new Map();
+for(const [geography,codes] of PROFIT_LOSS_GEOGRAPHY_GROUPS){
+  for(const accountCode of codes)geographyByCode.set(accountCode,geography);
+}
+
 const normalizeFallback=fallback=>fallback==='BalanceSheet'||fallback==='ProfitLoss'?fallback:'ProfitLoss';
 const rows=[];
 for(const [fs,fs5,reportGroup,codes] of GROUPS){
-  for(const accountCode of codes)rows.push(Object.freeze({
-    accountCode,fs,statement:fs==='BS'?'BalanceSheet':'ProfitLoss',
-    accountType:fs5,fs5,reportGroup,type:reportGroup
-  }));
+  for(const accountCode of codes){
+    const base={accountCode,fs,statement:fs==='BS'?'BalanceSheet':'ProfitLoss',accountType:fs5,fs5,reportGroup,type:reportGroup};
+    if(fs==='IS'){
+      const geography=geographyByCode.get(accountCode)||'Unclassified';
+      rows.push(Object.freeze({...base,reportSubgroup:geography,geography}));
+    }else rows.push(Object.freeze(base));
+  }
 }
 const mappingByCode=new Map(rows.map(row=>[row.accountCode,row]));
 const balanceSheetCodes=rows.filter(row=>row.fs==='BS').map(row=>row.accountCode);
@@ -70,6 +128,7 @@ export function applyStatementClassification(accounts=[]){
     if(mapped){
       account.accountType=mapped.fs5;
       account.reportGroup=mapped.reportGroup;
+      if(mapped.reportSubgroup)account.reportSubgroup=mapped.reportSubgroup;
     }else if(!account.accountType||['Asset/Liability','Income/Expense'].includes(account.accountType)){
       account.accountType=statement==='BalanceSheet'?'Asset/Liability':'Income/Expense';
     }
