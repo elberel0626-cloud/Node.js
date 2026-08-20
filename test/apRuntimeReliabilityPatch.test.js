@@ -11,10 +11,15 @@ import { applyApIncomingConversionPatch } from '../src/apIncomingConversionPatch
 import { applyIncomingReviewSavePatch } from '../src/incomingReviewSavePatch.js';
 import { applyApRuntimeReliabilityPatch } from '../src/apRuntimeReliabilityPatch.js';
 
-test('final AP runtime initializes incoming review state and keeps PO candidates eligible-only',async()=>{
+test('final AP runtime initializes incoming review state and keeps explicit blank PO authoritative',async()=>{
   const base=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   let source=applyIncomingPurchaseOrderWorkflowPatch(base);source=applyPurchaseOrderPreferencesPatch(source);source=applyPurchaseOrderReportingPatch(source);source=applyApIncomingConversionPatch(source);source=applyIncomingReviewSavePatch(source);source=applyApRuntimeReliabilityPatch(source);
   assert.match(source,/r\.draftBill=r\.draftBill\|\|\{\}/);
+  assert.match(source,/submittedPoField/);
+  assert.match(source,/r\.extracted\.purchaseOrderNumber=submittedPo;r\.extracted\.poNumber=submittedPo/);
+  assert.match(source,/reviewedPoNumber\?matchIncomingPo/);
+  assert.match(source,/Object\.prototype\.hasOwnProperty\.call\(r\.extracted\|\|\{\},'purchaseOrderNumber'\)/);
+  assert.match(source,/matchType:'Non-PO'/);
   assert.match(source,/allowed\.has\(p\.status\)\|\|billableLinesForPo\(p\)\.length>0/);
   assert.doesNotMatch(source,/filter\(p=>!\['Draft','Cancelled','Voided'\]\.includes\(p\.status\)\)/);
   assert.match(source,/INCOMING_ATTACHMENT_RETAIN_FAILED/);
