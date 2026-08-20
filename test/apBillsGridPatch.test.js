@@ -17,6 +17,15 @@ test('AP Bills route makes PO number and PO match status native ERP grid columns
   assert.equal(applyApBillsGridPatch(patched),patched);
 });
 
+test('current app.js Bills and Adjustments route is covered by the startup patch',async()=>{
+  const appSource=await readFile(new URL('../public/app.js',import.meta.url),'utf8');
+  const patched=applyApBillsGridPatch(appSource);
+  assert.notEqual(patched,appSource);
+  assert.doesNotMatch(patched,/if\(location\.pathname==='\/ap\/bills'\)\{ const rows=await api\('\/api\/ap\/documents\?type=Bill'\);/);
+  assert.match(patched,/key:'poNumbers',label:'PO Number'/);
+  assert.match(patched,/key:'poMatchStatus',label:'PO Match Status'/);
+});
+
 test('AP Bills helper no longer forces a full-page navigation to the login shell',async()=>{
   const helper=await readFile(new URL('../public/apBillsPoStatusColumns.js',import.meta.url),'utf8');
   assert.doesNotMatch(helper,/window\.location\.assign/);
