@@ -58,18 +58,31 @@ jobs:
           if [ "$rc" -ne 0 ]; then state=failure; description='Running AP Bills list API failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/api-list' -f description="$description" >/dev/null
           exit "$rc"
-      - name: Browser AP Bills navigation
+      - name: Browser AP Bills screen replacement
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          npx playwright test e2e/ap-bills-po-status.spec.js -g 'sidebar navigation actually replaces'
+          npx playwright test e2e/ap-bills-po-status.spec.js -g 'renders the Bills and Adjustments screen'
           rc=$?
           state=success
-          description='AP sidebar navigation replaced the old screen with Bills and Adjustments'
-          if [ "$rc" -ne 0 ]; then state=failure; description='AP Bills SPA navigation left the prior screen active'; fi
-          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/navigation' -f description="$description" >/dev/null
+          description='AP sidebar click rendered the Bills and Adjustments screen'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP Bills URL changed but prior screen remained visible'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/screen' -f description="$description" >/dev/null
+          exit "$rc"
+      - name: Browser AP Bills sidebar active state
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          npx playwright test e2e/ap-bills-po-status.spec.js -g 'moves the active sidebar selection'
+          rc=$?
+          state=success
+          description='AP sidebar active selection moved to Bills and Adjustments'
+          if [ "$rc" -ne 0 ]; then state=failure; description='AP sidebar active selection remained on the prior screen'; fi
+          gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-bills/sidebar-active' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser Bills PO columns
         if: success()
