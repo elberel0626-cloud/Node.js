@@ -6,11 +6,15 @@ on:
     paths:
       - public/apPurchaseOrderWorkspace.js
       - public/apIncomingCreateBillFix.js
+      - public/apProfessionalMatchingV2.js
       - public/index.html
       - src/apIncomingConversionPatch.js
+      - src/incomingReviewSavePatch.js
       - src/start.js
       - test/apProfessionalPoWorkspace.test.js
+      - test/apProfessionalMatchingV2.test.js
       - test/apIncomingConversionPatch.test.js
+      - test/incomingReviewSavePatch.test.js
       - package.json
       - .github/workflows/verify-ap-po-workspace.yml
   workflow_dispatch:
@@ -35,4 +39,4 @@ jobs:
       - name: Syntax check
         run: npm run check
       - name: AP PO focused regressions
-        run: node --test test/apProfessionalPoWorkspace.test.js test/apIncomingConversionPatch.test.js test/purchaseOrderPreferencesPatch.test.js
+        run: node --test test/apProfessionalPoWorkspace.test.js test/apProfessionalMatchingV2.test.js test/apIncomingConversionPatch.test.js test/incomingReviewSavePatch.test.js test/purchaseOrderPreferencesPatch.test.js
