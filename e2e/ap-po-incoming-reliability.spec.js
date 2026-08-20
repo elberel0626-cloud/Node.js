@@ -15,11 +15,20 @@ test('incoming review saves with PO removed and creates AP Bill',async({page})=>
   expect(created.status,JSON.stringify(created.body)).toBe(201);expect(created.body.billId).toBeTruthy();expect(created.body.bill.lines[0].poNumber||'').toBe('');expect(created.body.bill.invoicePdfAttached).toBe(true);
 });
 
-test('eligible vendor PO appears in AP bill Purchase Order tab',async({page})=>{
+test('eligible vendor PO lookup returns only selectable vendor POs',async({page})=>{
+  const candidates=await api(page,'/api/purchase-orders/lookup?vendorNumber=VEND-1004');
+  expect(candidates.status,JSON.stringify(candidates.body)).toBe(200);
+  expect(candidates.body.some(row=>row.poNumber==='PO-1001')).toBe(true);
+  expect(candidates.body.every(row=>row.vendorId==='VEND-1004')).toBe(true);
+  expect(candidates.body.every(row=>!['Draft','Saved','Cancelled','Voided'].includes(row.status))).toBe(true);
+});
+
+test('eligible vendor PO renders in AP bill Purchase Order tab',async({page})=>{
   const bill=await createPoVendorBill(page),billId=bill.id;
-  const candidates=await api(page,'/api/purchase-orders/lookup?vendorNumber=VEND-1004');expect(candidates.status,JSON.stringify(candidates.body)).toBe(200);expect(candidates.body.some(row=>row.poNumber==='PO-1001')).toBe(true);expect(candidates.body.every(row=>['Open','Partially Received','Partially Billed','Received','Closed'].includes(row.status))).toBe(true);
-  await openView(page,`/ap/bills/${billId}`,'#bPost');const tab=page.locator(".erp-workspace .erp-tabs [data-tab='purchaseOrder']");await expect(tab).toBeVisible();await tab.click();
-  const workspace=page.locator('#apPoV2');await expect(workspace).toBeVisible();const row=workspace.locator("tr[data-po='PO-1001']");await expect(row).toBeVisible();await expect(row.locator('.poPickV2')).toBeEnabled();
+  await openView(page,`/ap/bills/${billId}`,'#bPost');
+  const tab=page.locator(".erp-workspace .erp-tabs [data-tab='purchaseOrder']");await expect(tab).toBeVisible();await tab.click();
+  const workspace=page.locator('#apPoV2');await expect(workspace).toBeVisible();
+  const row=workspace.locator("tr[data-po='PO-1001']");await expect(row).toBeVisible();await expect(row.locator('.poPickV2')).toBeEnabled();
 });
 
 test('eligible vendor PO can be selected and saved on AP bill',async({page})=>{
