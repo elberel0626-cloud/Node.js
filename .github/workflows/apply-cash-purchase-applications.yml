@@ -1,0 +1,56 @@
+name: Apply Cash Purchase Applications
+
+on:
+  push:
+    branches:
+      - Development
+    paths:
+      - .github/workflows/apply-cash-purchase-applications.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Development
+        uses: actions/checkout@v4
+        with:
+          ref: Development
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply server patch
+        run: python3 scripts/patch_cash_purchase_applications.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          npm run check
+          node --check public/cashPurchaseApplications.js
+          git diff --check -- src/server.js
+
+      - name: Run tests
+        run: npm test
+
+      - name: Remove one-time patch helpers
+        run: |
+          rm -- scripts/patch_cash_purchase_applications.py
+          rm -- .github/workflows/apply-cash-purchase-applications.yml
+
+      - name: Commit validated changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git status --short
+          git add -- src/server.js scripts/patch_cash_purchase_applications.py .github/workflows/apply-cash-purchase-applications.yml
+          git commit -m "Support cash purchase invoice and credit memo applications"
+          git push origin HEAD:Development
