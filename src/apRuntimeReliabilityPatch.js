@@ -32,6 +32,10 @@ export function applyApRuntimeReliabilityPatch(source){
     "return json(res,500,{error:`The AP Bill was not created because its source PDF could not be retained: ${error.message}`});",
     "return json(res,422,{error:`The AP Bill was not created because its source PDF could not be retained: ${error.message}`,code:'INCOMING_ATTACHMENT_RETAIN_FAILED'});",
     'incoming conversion surfaces attachment error');
+  source=replaceOnce(source,
+    "if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount,credit:0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,line),branch:line.branch||branch});",
+    "if(lineAmount) lines.push({account:expenseAccount,debit:lineAmount>0?lineAmount:0,credit:lineAmount<0?Math.abs(lineAmount):0,sourceReference:doc.id,lineDescription:apPostingLineDescription(doc,line),branch:line.branch||branch});",
+    'signed AP bill lines use conventional GL debit credit sides');
   return source;
 }
 
