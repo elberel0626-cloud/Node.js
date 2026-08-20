@@ -20,18 +20,27 @@ test('new AP Bill refreshes vendor POs and shows live match status plus GL detai
   const row=workspace.locator("tr[data-po='PO-1002']");
   await expect(row).toBeVisible();
   await row.locator('.poPickNewV2').check();
+
+  const previewResponsePromise=page.waitForResponse(response=>response.url().endsWith('/api/ap/po-match-preview')&&response.request().method()==='POST');
   await page.locator('#poApplyNewV2').click();
   await expect(page.locator(".ln-po[data-i='0']")).toHaveValue('PO-1002');
+  const previewResponse=await previewResponsePromise;
+  const previewText=await previewResponse.text();
+  expect(previewResponse.status(),previewText).toBe(200);
+  const serverMatch=JSON.parse(previewText);
+  expect(serverMatch.hasPo).toBe(true);
+  expect(serverMatch.status).toMatch(/Waiting for Receipt|Partially Received|Matched - Ready to Post|Price Variance - Approval Required|Approved Match Exception - Ready to Post|Match Exception|Quantity Exception - Pending Purchasing Approval|Vendor Credit Pending/);
 
   const matchStrip=page.locator('#apMatchStatusStrip');
   await expect(matchStrip).toBeVisible();
-  await expect(page.locator('#apMatchStatusValue')).toHaveText(/Waiting for Receipt|Partially Received|Matched - Ready to Post|Price Variance - Approval Required|Approved Match Exception - Ready to Post|Match Exception/);
+  await expect(page.locator('#apMatchStatusValue')).toHaveText(serverMatch.status);
   await expect(matchStrip).toContainText('Posting Control');
   await expect(matchStrip).toContainText('Live Unsaved Preview');
 
   const preview=page.locator('#newMatchV2 .ap-unsaved-match-table');
   await expect(preview).toBeVisible();
   await expect(preview).toContainText('Current 3-Way Match');
+  await expect(preview).toContainText(serverMatch.status);
   await expect(preview).toContainText('GL Code');
   await expect(preview).toContainText('GL Account');
 
@@ -41,5 +50,6 @@ test('new AP Bill refreshes vendor POs and shows live match status plus GL detai
   await expect(lineTable.locator('tr').first()).toContainText('GL Code');
   await expect(lineTable.locator('tr').first()).toContainText('GL Account Description');
   await expect(page.locator(".ln-exp[data-i='0']")).not.toHaveValue('');
-  await expect(page.locator(".ln-exp[data-i='0']").locator('xpath=following-sibling::*[contains(@class,"ap-effective-gl")]')).toBeVisible();
+  await expect(page.locator('#billLines .ap-effective-gl').first()).toBeVisible();
+  await expect(page.locator('#billLines .ap-effective-gl').first()).toContainText(/GL:|PO posting basis:/);
 });
