@@ -7,10 +7,11 @@
   parityStyle.dataset.apBillLineParity='1';
   parityStyle.textContent=`
     .new-ap-bill .ap-bill-lines-scroll{display:block!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;overflow-y:visible!important}
-    .new-ap-bill .compact-ap-lines{width:100%!important;min-width:1500px!important;table-layout:auto!important}
+    .new-ap-bill .compact-ap-lines{width:100%!important;min-width:1200px!important;table-layout:auto!important}
     .new-ap-bill .compact-ap-lines th,.new-ap-bill .compact-ap-lines td{display:table-cell!important}
     #billLines .ap-gl-native-select{display:none!important}
-    #billLines .ap-gl-search-input{width:100%!important;min-width:115px!important;background-image:none!important}
+    #billLines .ap-gl-search-input{width:100%!important;min-width:150px!important;background-image:none!important}
+    #billLines .ap-effective-gl{display:none!important}
     .ap-gl-account-suggestions{z-index:32000!important;max-height:310px;overflow:auto}
     .ap-gl-account-suggestions .erp-lookup-row{grid-template-columns:90px 1fr!important}
   `;
@@ -100,6 +101,21 @@
     loadAccounts().then(syncDisplay).catch(syncDisplay);
   }
 
+  function hideRemovedColumns(table){
+    const headerRow=table.querySelector('tr:first-child');
+    if(!headerRow)return;
+    const headers=[...headerRow.children];
+    const removeLabels=new Set(['account description','gl account description','po number','receipt number']);
+    const hiddenIndexes=[];
+    headers.forEach((header,index)=>{
+      if(removeLabels.has(header.textContent.trim().toLowerCase())){
+        hiddenIndexes.push(index);
+        header.style.setProperty('display','none','important');
+      }
+    });
+    [...table.querySelectorAll('tr')].slice(1).forEach(row=>hiddenIndexes.forEach(index=>row.children[index]?.style.setProperty('display','none','important')));
+  }
+
   function normalize(){
     if(!isApBill()){closeAll();return;}
     const table=document.querySelector('#billLines .compact-ap-lines');
@@ -107,23 +123,17 @@
     const headers=[...table.querySelectorAll('tr:first-child th')];
     headers.forEach(header=>{
       const label=header.textContent.trim();
-      if(label==='Account')header.textContent='GL Code';
-      else if(label==='Account Description')header.textContent='GL Account Description';
+      if(label==='Account')header.textContent='GL Account';
       else if(label==='Lookup')header.textContent='Receipt Lookup';
     });
     table.querySelectorAll('.ln-po-pick').forEach(button=>button.remove());
+    hideRemovedColumns(table);
     [...table.querySelectorAll('tr')].slice(1).forEach(row=>{
       const select=row.querySelector('.ln-exp');if(!select)return;
       enhanceGlSelect(select);
       const code=String(select.value||'').trim();
       const account=accountByCode.get(code.toLowerCase());
       const description=account?.name||String(row.querySelector('.ln-account-description')?.textContent||'').trim();
-      const po=String(row.querySelector('.ln-po')?.value||'').trim();
-      let note=select.parentElement.querySelector('.ap-effective-gl');
-      if(!note){note=document.createElement('small');note.className='ap-effective-gl';select.after(note);}
-      const text=`${po?'PO posting basis':'GL'}: ${code||'—'}${description?` — ${description}`:''}`;
-      if(note.textContent!==text)note.textContent=text;
-      note.style.display='block';note.style.fontSize='11px';note.style.opacity='.72';note.style.marginTop='3px';
       if(code)select.title=description?`${code} — ${description}`:code;
     });
   }
