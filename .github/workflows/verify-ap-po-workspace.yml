@@ -8,6 +8,7 @@ on:
       - public/apIncomingCreateBillFix.js
       - public/apProfessionalMatchingV2.js
       - public/apNewBillProfessionalPo.js
+      - public/apPoVendorAutoRefresh.js
       - public/index.html
       - src/apInvoiceEvaluation.js
       - src/apIncomingConversionPatch.js
@@ -85,8 +86,8 @@ jobs:
           npx playwright test e2e/ap-new-bill-professional-po.spec.js
           rc=$?
           state=success
-          description='New AP Bill uses professional PO workspace and applies PO lines'
-          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill professional PO workspace failed'; fi
+          description='New AP Bill vendor selection automatically refreshed eligible POs and applied PO lines'
+          if [ "$rc" -ne 0 ]; then state=failure; description='New AP Bill vendor-to-PO automatic refresh failed'; fi
           gh api "repos/${{ github.repository }}/statuses/${{ github.sha }}" -f state="$state" -f context='ap-po/browser-new-bill' -f description="$description" >/dev/null
           exit "$rc"
       - name: Browser incoming save and create
