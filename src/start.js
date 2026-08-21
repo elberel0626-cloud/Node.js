@@ -17,6 +17,7 @@ import { prepareManufacturingAgent3Runtime } from './manufacturingAgent3ReviewPa
 import { prepareManufacturingAgent3PlanningRuntime } from './manufacturingAgent3PlanningPatch.js';
 import { prepareManufacturingAgent3MasterQualityRuntime } from './manufacturingAgent3MasterQualityPatch.js';
 import { prepareManufacturingAgent3AdvancedRuntime } from './manufacturingAgent3AdvancedPatch.js';
+import { prepareManufacturingAgent3FinalizedRuntime } from './manufacturingAgent3FinalizationPatch.js';
 import { prepareManufacturingServer } from './manufacturingModulePatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -51,6 +52,7 @@ await prepareManufacturingAgent3Runtime();
 await prepareManufacturingAgent3PlanningRuntime();
 await prepareManufacturingAgent3MasterQualityRuntime();
 await prepareManufacturingAgent3AdvancedRuntime();
+await prepareManufacturingAgent3FinalizedRuntime();
 const manufacturingServerModule = await prepareManufacturingServer(financialReportMappingServerModule);
 const manufacturingServerUrl = new URL(manufacturingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(manufacturingServerUrl)], { stdio: 'inherit' });
