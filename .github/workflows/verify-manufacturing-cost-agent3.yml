@@ -1,0 +1,32 @@
+name: Verify Manufacturing Cost Agent 3 Review
+
+on:
+  pull_request:
+    branches: [Development]
+
+permissions:
+  contents: read
+
+jobs:
+  manufacturing-cost-review:
+    if: github.head_ref == 'agent4/manufacturing-cost-accounting-core'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cost-accounting syntax check
+        run: node --check src/manufacturingCostAccounting.js
+
+      - name: Manufacturing cost tests
+        run: node --test test/manufacturingCostAccounting.test.js
