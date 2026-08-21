@@ -74,12 +74,14 @@ function drawInvoicePage({invoice,customer,companyName,rows,pageIndex,pageCount}
     c.textRight(589,y,pdfMoney(amount),{size:6.2,font:'F1',fill:BLACK});
   });
 
-  const lineSubtotal=(invoice.lines||[]).reduce((sum,line)=>sum+lineAmount(line),0),discountTotal=Number(invoice.discountTotal||0),tax=Number(invoice.taxTotal||0),freight=Number(invoice.freight||invoice.deliveryHandling||0),net=Number(invoice.subtotal??lineSubtotal),grand=Number(invoice.grandTotal??invoice.amount??(net-discountTotal+tax+freight)),balance=Number(invoice.balance??grand);
+  const lineSubtotal=(invoice.lines||[]).reduce((sum,line)=>sum+lineAmount(line),0),discountTotal=Number(invoice.discountTotal||0),tax=Number(invoice.taxTotal||0),freight=Number(invoice.freight||invoice.deliveryHandling||0),net=Number(invoice.subtotal??lineSubtotal),grand=Number(invoice.amount??invoice.grandTotal??(net-discountTotal+tax+freight)),balance=Number(invoice.balance??grand);
   if(pageIndex===pageCount-1){
     const ty=578;c.text(366,ty,'Net Order Value',{size:6.7,font:'F2',fill:BLACK});c.textRight(589,ty,pdfMoney(net),{size:6.7,font:'F1',fill:BLACK});
     c.text(366,ty+13,'Delivery and Handling',{size:6.7,font:'F1',fill:BLACK});c.textRight(589,ty+13,pdfMoney(freight),{size:6.7,font:'F1',fill:BLACK});
     c.text(366,ty+26,'Tax',{size:6.7,font:'F1',fill:BLACK});c.textRight(589,ty+26,pdfMoney(tax),{size:6.7,font:'F1',fill:BLACK});
     if(discountTotal)c.text(366,ty+39,'Discount',{size:6.7,font:'F1',fill:BLACK}),c.textRight(589,ty+39,`-${pdfMoney(discountTotal)}`,{size:6.7,font:'F1',fill:BLACK});
+    const totalLabel=invoice.type==='Invoice'?'Invoice Total (USD)':`${docTitle(invoice)} Total (USD)`;
+    c.text(285,639,totalLabel,{size:7.2,font:'F2',fill:BLACK});c.textRight(589,639,pdfMoney(grand),{size:7.2,font:'F2',fill:BLACK});
     c.text(285,655,'Balance Due (USD)',{size:7.2,font:'F2',fill:BLACK});c.textRight(589,655,pdfMoney(balance),{size:7.2,font:'F2',fill:BLACK});
     c.text(120,704,'** PLEASE CONTACT THE CREDIT DEPT WITH ANY QUESTIONS **',{size:7.1,font:'F2',fill:BLACK});
   } else c.textCenter(306,666,'Continued on next page',{size:7,font:'F2',fill:BLACK});
