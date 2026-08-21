@@ -25,7 +25,7 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['POST','PUT','PATCH','DELETE'],/^\/api\/sales-orders(?:\/.*)?$/,'AR_DOCUMENT_CREATE'],
   [['GET','POST','PUT','PATCH','DELETE'],/^\/api\/(?:purchase-orders|purchase-receipts|purchasing)(?:\/.*)?$/,'PO_CREATE'],
   [['GET'],/^\/api\/manufacturing(?:\/.*)?$/,'INVENTORY_READ'],
-  [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/(?:issue-materials|report-operation|complete|close)$/,'INVENTORY_POST'],
+  [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/(?:issue-materials|return-materials|report-operation|complete|close)$/,'INVENTORY_POST'],
   [['PUT'],/^\/api\/manufacturing\/settings$/,'SYSTEM_CONFIGURATION_ADMIN'],
   [['POST','PUT','PATCH','DELETE'],/^\/api\/manufacturing(?:\/.*)?$/,'INVENTORY_ADJUST'],
   [['GET'],/^\/api\/inventory(?:\/.*)?$/,'INVENTORY_READ'],
