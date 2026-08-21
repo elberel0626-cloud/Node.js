@@ -14,6 +14,7 @@ import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.j
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
 import { prepareFinancialReportMappingServer } from './financialReportMappingPatch.js';
 import { prepareManufacturingAgent3Runtime } from './manufacturingAgent3ReviewPatch.js';
+import { prepareManufacturingAgent3PlanningRuntime } from './manufacturingAgent3PlanningPatch.js';
 import { prepareManufacturingServer } from './manufacturingModulePatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -45,6 +46,7 @@ const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer
 const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apRuntimeReliabilityServerModule);
 const financialReportMappingServerModule = await prepareFinancialReportMappingServer(arProfessionalDocumentsServerModule);
 await prepareManufacturingAgent3Runtime();
+await prepareManufacturingAgent3PlanningRuntime();
 const manufacturingServerModule = await prepareManufacturingServer(financialReportMappingServerModule);
 const manufacturingServerUrl = new URL(manufacturingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(manufacturingServerUrl)], { stdio: 'inherit' });
