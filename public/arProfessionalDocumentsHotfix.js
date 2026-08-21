@@ -1,16 +1,17 @@
 (()=>{
-  const HOTFIX_KEY='arProfessionalDocumentsHotfixV4';
+  const HOTFIX_KEY='arProfessionalDocumentsHotfixV5';
   if(window[HOTFIX_KEY])return;
   window[HOTFIX_KEY]=true;
 
   const PRINTABLE_TYPES=new Set(['Invoice','Credit Memo','Debit Memo']);
+  const PDF_ACTIONS=new Set(['view','download','print']);
   const money=value=>Number(value||0).toLocaleString('en-US',{style:'currency',currency:'USD'});
-  const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[ch]));
 
   function ensureStyles(){
-    if(document.getElementById('arDocumentPdfParityStylesV4'))return;
+    if(document.getElementById('arDocumentPdfParityStylesV5'))return;
     const style=document.createElement('style');
-    style.id='arDocumentPdfParityStylesV4';
+    style.id='arDocumentPdfParityStylesV5';
     style.textContent=`
       .ar-pdf-modal{width:min(980px,90vw)!important;height:min(760px,86vh)!important}
       .ar-parity-pdf-overlay{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:100000;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -72,6 +73,32 @@
     if(action==='print')return printUrl(documentPdfUrl(id,false));
   }
 
+  function currentInvoiceMemoContext(){
+    if(!location.pathname.startsWith('/ar/doc/'))return null;
+    const id=decodeURIComponent(location.pathname.split('/').pop()||'');
+    const type=document.querySelector('#dtype')?.value||'';
+    if(!id||id==='<NEW>'||!PRINTABLE_TYPES.has(type))return null;
+    return {id,type};
+  }
+
+  // The native invoice screen assigns its own onchange handler after render.
+  // Capture PDF inquiry changes before they reach that legacy handler so View,
+  // Download and Print can only use the same professional server PDF endpoint
+  // used by Print AR Documents.
+  document.addEventListener('change',event=>{
+    const select=event.target;
+    if(!(select instanceof HTMLSelectElement)||select.id!=='inqSel')return;
+    const action=select.value;
+    if(!PDF_ACTIONS.has(action))return;
+    const context=currentInvoiceMemoContext();
+    if(!context)return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    select.value='';
+    runDocumentPdfAction(action,context.id,context.type);
+  },true);
+
   function mountCustomerSearch(host,customers,onSelect){
     host.innerHTML="<div class='ar-parity-customer-wrap'><input class='ar-customer-search' autocomplete='off' placeholder='Type customer number or name'><div class='ar-parity-customer-results'></div></div>";
     const input=host.querySelector('input'),results=host.querySelector('.ar-parity-customer-results');
@@ -81,8 +108,8 @@
   }
 
   async function renderPrintArWorkspace(view){
-    if(view.dataset.arPdfParityPrint==='v4')return;
-    view.dataset.arPdfParityPrint='v4';
+    if(view.dataset.arPdfParityPrint==='v5')return;
+    view.dataset.arPdfParityPrint='v5';
     ensureStyles();
     const customers=await getJson('/api/ar/customers');
     if(location.pathname!=='/ar/processes/print-ar')return;
@@ -123,19 +150,21 @@
     view.querySelector('#arDetailPdfView')?.remove();
     const typeSelect=view.querySelector('#dtype'),inquiry=view.querySelector('#inqSel');
     const type=typeSelect?.value;
-    if(!PRINTABLE_TYPES.has(type)||!inquiry||inquiry.dataset.arPdfParityBound==='v4')return;
+    if(!PRINTABLE_TYPES.has(type)||!inquiry||inquiry.dataset.arPdfParityBound==='v5')return;
     const id=decodeURIComponent(location.pathname.split('/').pop());if(!id||id==='<NEW>')return;
     ensureStyles();
 
     const replacement=inquiry.cloneNode(false);
-    replacement.id='inqSel';replacement.dataset.arPdfParityBound='v4';replacement.dataset.professionalPdfBound='1';
+    replacement.id='inqSel';replacement.dataset.arPdfParityBound='v5';replacement.dataset.professionalPdfBound='1';
     replacement.innerHTML=`<option value=''>Inquiry</option><option value='view'>View ${esc(type)}</option><option value='download'>Download ${esc(type)}</option><option value='print'>Print ${esc(type)}</option><option value='je'>View Journal Entry</option><option value='apps'>View Applications</option>`;
     inquiry.replaceWith(replacement);
 
     replacement.onchange=event=>{
       event.preventDefault();event.stopPropagation();
       const action=replacement.value;replacement.value='';
-      if(['view','download','print'].includes(action))return runDocumentPdfAction(action,id,type);
+      // PDF actions are intentionally handled by the capture listener above so
+      // the native legacy onchange handler can never substitute invoicePdfHtml.
+      if(PDF_ACTIONS.has(action))return;
       if(action==='apps')return view.querySelector("[data-tab='tab-app']")?.click();
       if(action==='je'){
         const link=view.querySelector("#tab-fin a[href^='/finance/journal/']");
