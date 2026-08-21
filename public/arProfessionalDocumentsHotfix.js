@@ -1,89 +1,178 @@
 (()=>{
-  const HOTFIX_KEY='arProfessionalDocumentsHotfixV2';
+  const HOTFIX_KEY='arProfessionalDocumentsHotfixV3';
   if(window[HOTFIX_KEY])return;
   window[HOTFIX_KEY]=true;
 
-  const nativeFetch=window.fetch.bind(window);
-  window.fetch=async(input,options={})=>{
-    const response=await nativeFetch(input,options);
-    try{
-      const rawUrl=typeof input==='string'?input:(input?.url||String(input||''));
-      const url=new URL(rawUrl,location.origin);
-      const method=String(options?.method||input?.method||'GET').toUpperCase();
-      if(method==='GET'&&location.pathname==='/ar/processes/print-ar'&&url.pathname==='/api/ar/documents'&&response.ok){
-        const data=await response.clone().json();
-        if(Array.isArray(data)){
-          const postedOnly=data.filter(document=>document?.type==='Invoice'&&document?.posted===true&&document?.status!=='Voided');
-          return new Response(JSON.stringify(postedOnly),{
-            status:response.status,
-            statusText:response.statusText,
-            headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'}
-          });
+  const PRINTABLE_TYPES=new Set(['Invoice','Credit Memo','Debit Memo']);
+  const money=value=>Number(value||0).toLocaleString('en-US',{style:'currency',currency:'USD'});
+  const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+
+  function ensureStyles(){
+    if(document.getElementById('arDocumentPdfParityStyles'))return;
+    const style=document.createElement('style');
+    style.id='arDocumentPdfParityStyles';
+    style.textContent=`
+      .ar-pdf-modal{width:min(980px,90vw)!important;height:min(760px,86vh)!important}
+      .ar-parity-pdf-overlay{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:100000;display:flex;align-items:center;justify-content:center;padding:24px}
+      .ar-parity-pdf-modal{width:min(980px,90vw);height:min(760px,86vh);background:#fff;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+      .ar-parity-pdf-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dbe2ea}
+      .ar-parity-pdf-modal iframe{border:0;flex:1;width:100%}
+      .ar-parity-customer-wrap{position:relative}.ar-parity-customer-results{position:absolute;z-index:1000;left:0;right:0;top:100%;max-height:260px;overflow:auto;background:#fff;border:1px solid #b9c3d2;box-shadow:0 8px 22px rgba(0,0,0,.14);display:none}
+      .ar-parity-customer-results.open{display:block}.ar-parity-customer-option{padding:9px 10px;cursor:pointer;border-bottom:1px solid #edf0f4}.ar-parity-customer-option:hover{background:#eef4ff}.ar-parity-customer-option strong{display:block}.ar-parity-customer-option span{font-size:11px;color:#596579}
+    `;
+    document.head.appendChild(style);
+  }
+
+  async function getJson(url){
+    const response=await fetch(url,{credentials:'same-origin'});
+    const text=await response.text();let data={};
+    try{data=text?JSON.parse(text):{};}catch{data={error:text};}
+    if(!response.ok)throw new Error(data.error||data.message||text||`Request failed (${response.status})`);
+    return data;
+  }
+
+  async function postJson(url,payload){
+    const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),credentials:'same-origin'});
+    const text=await response.text();let data={};
+    try{data=text?JSON.parse(text):{};}catch{data={error:text};}
+    if(!response.ok)throw new Error(data.error||data.message||text||`Request failed (${response.status})`);
+    return data;
+  }
+
+  async function fetchPdf(url){
+    const response=await fetch(url,{credentials:'same-origin'});
+    if(!response.ok){
+      const text=await response.text();let message=text;
+      try{message=JSON.parse(text).error||message;}catch{}
+      throw new Error(message||`PDF request failed (${response.status})`);
+    }
+    return response.blob();
+  }
+
+  function pdfFileName(type,id){return `${String(type||'AR Document').replace(/\s+/g,'-')}-${String(id||'document').replace(/[^a-zA-Z0-9._-]/g,'_')}.pdf`;}
+  function pdfTitle(type,id){return `${type||'AR Document'} ${id||''}`.trim();}
+
+  function openPdfPreview(blob,title){
+    document.querySelector('.ar-parity-pdf-overlay')?.remove();
+    const url=URL.createObjectURL(blob),overlay=document.createElement('div');
+    overlay.className='ar-parity-pdf-overlay';
+    overlay.innerHTML=`<div class='ar-parity-pdf-modal'><div class='ar-parity-pdf-head'><strong>${esc(title)}</strong><button type='button' class='ar-parity-pdf-close'>Close</button></div><iframe title='${esc(title)}'></iframe></div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('iframe').src=url;
+    const close=()=>{URL.revokeObjectURL(url);overlay.remove();};
+    overlay.querySelector('.ar-parity-pdf-close').onclick=close;
+    overlay.onclick=event=>{if(event.target===overlay)close();};
+  }
+
+  async function runPdfAction({action,id,type}){
+    const url=`/api/ar/documents/${encodeURIComponent(id)}/pdf`;
+    const blob=await fetchPdf(`${url}?download=${action==='download'?'1':'0'}`);
+    if(action==='view')return openPdfPreview(blob,pdfTitle(type,id));
+    if(action==='download'){
+      const objectUrl=URL.createObjectURL(blob),link=document.createElement('a');
+      link.href=objectUrl;link.download=pdfFileName(type,id);link.click();
+      setTimeout(()=>URL.revokeObjectURL(objectUrl),2000);return;
+    }
+    if(action==='print'){
+      const objectUrl=URL.createObjectURL(blob),frame=document.createElement('iframe');
+      frame.style.position='fixed';frame.style.right='0';frame.style.bottom='0';frame.style.width='1px';frame.style.height='1px';frame.style.opacity='0';frame.src=objectUrl;
+      document.body.appendChild(frame);
+      frame.onload=()=>setTimeout(()=>{frame.contentWindow?.focus();frame.contentWindow?.print();setTimeout(()=>{URL.revokeObjectURL(objectUrl);frame.remove();},3000);},250);
+    }
+  }
+
+  function mountCustomerSearch(host,customers,onSelect){
+    host.innerHTML="<div class='ar-parity-customer-wrap'><input class='ar-customer-search' autocomplete='off' placeholder='Type customer number or name'><div class='ar-parity-customer-results'></div></div>";
+    const input=host.querySelector('input'),results=host.querySelector('.ar-parity-customer-results');
+    const matches=()=>{const q=input.value.trim().toLowerCase();return customers.filter(customer=>!q||String(customer.id||'').toLowerCase().includes(q)||String(customer.name||'').toLowerCase().includes(q)||String(customer.email||'').toLowerCase().includes(q)).slice(0,30);};
+    const render=()=>{const list=matches();results.innerHTML=list.length?list.map(customer=>`<div class='ar-parity-customer-option' data-id='${esc(customer.id)}'><strong>${esc(customer.id)} — ${esc(customer.name)}</strong><span>${esc(customer.email||'No email')}</span></div>`).join(''):"<div class='ar-parity-customer-option'><span>No matching customers</span></div>";results.classList.add('open');results.querySelectorAll('[data-id]').forEach(row=>row.onmousedown=event=>{event.preventDefault();const selected=customers.find(customer=>String(customer.id)===String(row.dataset.id));if(!selected)return;input.value=`${selected.id} — ${selected.name}`;results.classList.remove('open');onSelect(selected);});};
+    input.onfocus=render;input.oninput=render;input.onkeydown=event=>{if(event.key==='Escape')results.classList.remove('open');if(event.key==='Enter'){event.preventDefault();const selected=matches()[0];if(selected){input.value=`${selected.id} — ${selected.name}`;results.classList.remove('open');onSelect(selected);}}};input.onblur=()=>setTimeout(()=>results.classList.remove('open'),120);
+  }
+
+  async function renderPrintArWorkspace(view){
+    if(view.dataset.arPdfParityPrint==='1')return;
+    view.dataset.arPdfParityPrint='1';
+    ensureStyles();
+    const customers=await getJson('/api/ar/customers');
+    if(location.pathname!=='/ar/processes/print-ar')return;
+    let customer=null,documents=[],selected=null;
+    view.innerHTML=`<section class='ar-doc-workspace'><div class='ar-doc-card'><div class='header-row'><h3>Print AR Documents</h3><div class='ar-doc-toolbar'><button id='arParityView' disabled>View Document</button><button id='arParityDownload' disabled>Download PDF</button><button id='arParityEmail' disabled>Email</button><button id='arParityPrint' disabled>Print</button></div></div><div class='ar-doc-header'><label class='ar-doc-label'>Customer Search<div id='arParityCustomerSearch'></div></label><div class='ar-doc-message'>Select one posted invoice, credit memo, or debit memo below. Actions apply to the selected document only.</div></div></div><div id='arParityGrid' class='ar-doc-card'><div class='ar-doc-empty'>Select a customer to load AR documents.</div></div><div id='arParityMessage'></div></section>`;
+
+    const message=(text,error=false)=>{const host=document.getElementById('arParityMessage');if(host)host.innerHTML=text?`<div class='ar-doc-message ${error?'error':''}'>${esc(text)}</div>`:'';};
+    const syncButtons=()=>{
+      ['arParityView','arParityDownload','arParityPrint'].forEach(id=>{const button=document.getElementById(id);if(button)button.disabled=!selected;});
+      const email=document.getElementById('arParityEmail');if(email)email.disabled=!selected||!customer?.email;
+      const viewButton=document.getElementById('arParityView');if(viewButton)viewButton.textContent=selected?`View ${selected.type}`:'View Document';
+    };
+    const render=()=>{
+      const grid=document.getElementById('arParityGrid');if(!grid)return;
+      grid.innerHTML=documents.length?`<div class='header-row'><h4>${esc(customer.name)} — AR Documents</h4><span>${documents.length} document${documents.length===1?'':'s'}</span></div><div class='ar-doc-table-wrap'><table class='ar-doc-table'><thead><tr><th></th><th>Type</th><th>Reference #</th><th>Document Date</th><th>Due Date</th><th>Customer PO</th><th>Sales Order</th><th class='num'>Amount</th><th class='num'>Balance</th><th>Status</th></tr></thead><tbody>${documents.map(document=>`<tr data-id='${esc(document.id)}'><td><input type='radio' name='arParityPick' value='${esc(document.id)}'></td><td>${esc(document.type)}</td><td><a href='/ar/doc/${encodeURIComponent(document.id)}'>${esc(document.id)}</a></td><td>${esc(document.date||'')}</td><td>${esc(document.dueDate||'')}</td><td>${esc(document.customerPO||'')}</td><td>${esc(document.sourceSalesOrderNumber||document.orderNumber||'')}</td><td class='num'>${money(document.amount)}</td><td class='num'>${money(document.balance)}</td><td>${esc(document.status||'')}</td></tr>`).join('')}</tbody></table></div>`:"<div class='ar-doc-empty'>No posted invoices, credit memos, or debit memos were found for this customer.</div>";
+      grid.querySelectorAll('input[name="arParityPick"]').forEach(radio=>radio.onchange=()=>{selected=documents.find(document=>String(document.id)===String(radio.value))||null;syncButtons();});
+      grid.querySelectorAll('tbody tr').forEach(row=>row.onclick=event=>{if(event.target.closest('a'))return;const radio=row.querySelector('input[type=radio]');if(radio){radio.checked=true;radio.dispatchEvent(new Event('change'));}});
+      selected=null;syncButtons();
+    };
+    const load=async selectedCustomer=>{
+      customer=selectedCustomer;selected=null;syncButtons();message('Loading AR documents...');
+      try{
+        const all=await getJson('/api/ar/documents?customerId='+encodeURIComponent(selectedCustomer.id));
+        documents=all.filter(document=>PRINTABLE_TYPES.has(document.type)&&document.posted===true&&document.status!=='Voided').sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.id||'').localeCompare(String(a.id||'')));
+        message('');render();
+      }catch(error){documents=[];render();message(error.message,true);}
+    };
+    mountCustomerSearch(document.getElementById('arParityCustomerSearch'),customers,load);
+
+    document.getElementById('arParityView').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'view',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
+    document.getElementById('arParityDownload').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'download',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
+    document.getElementById('arParityPrint').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'print',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
+    document.getElementById('arParityEmail').onclick=async()=>{if(!selected||!customer?.email)return;if(!confirm(`Email ${selected.type.toLowerCase()} ${selected.id} to ${customer.email}?`))return;const button=document.getElementById('arParityEmail');button.disabled=true;try{const result=await postJson('/api/ar/invoices/send',{invoiceIds:[selected.id]});const failure=result.results?.find(row=>row.emailStatus==='Failed');if(result.failed||failure)throw new Error(failure?.errorMessage||'Email failed.');message(`${selected.type} ${selected.id} emailed to ${customer.email}.`);}catch(error){message(error.message,true);}finally{syncButtons();}};
+  }
+
+  function enhanceInvoiceMemoDetail(view){
+    if(!location.pathname.startsWith('/ar/doc/'))return;
+    const typeSelect=view.querySelector('#dtype'),inquiry=view.querySelector('#inqSel'),toolbar=view.querySelector('.erp-toolbar');
+    const type=typeSelect?.value;
+    if(!PRINTABLE_TYPES.has(type)||!inquiry||!toolbar||inquiry.dataset.arPdfParityBound==='1')return;
+    const id=decodeURIComponent(location.pathname.split('/').pop());if(!id||id==='<NEW>')return;
+    ensureStyles();
+
+    const replacement=inquiry.cloneNode(false);
+    replacement.id='inqSel';replacement.dataset.arPdfParityBound='1';replacement.dataset.professionalPdfBound='1';
+    replacement.innerHTML=`<option value=''>Inquiry</option><option value='view'>View ${esc(type)}</option><option value='download'>Download ${esc(type)}</option><option value='print'>Print ${esc(type)}</option><option value='je'>View Journal Entry</option><option value='apps'>View Applications</option>`;
+    inquiry.replaceWith(replacement);
+
+    let viewButton=toolbar.querySelector('#arDetailPdfView');
+    if(!viewButton){viewButton=document.createElement('button');viewButton.type='button';viewButton.id='arDetailPdfView';toolbar.insertBefore(viewButton,replacement);}
+    viewButton.textContent=`View ${type}`;
+    viewButton.onclick=async()=>{try{await runPdfAction({action:'view',id,type});}catch(error){alert(error.message);}};
+
+    replacement.onchange=async()=>{
+      const action=replacement.value;replacement.value='';
+      try{
+        if(['view','download','print'].includes(action))return await runPdfAction({action,id,type});
+        if(action==='apps')return view.querySelector("[data-tab='tab-app']")?.click();
+        if(action==='je'){
+          const link=view.querySelector("#tab-fin a[href^='/finance/journal/']");
+          if(link)return link.click();
+          return view.querySelector("[data-tab='tab-fin']")?.click();
         }
-      }
-    }catch(error){
-      console.warn('AR posted-document filter hotfix could not inspect response.',error);
-    }
-    return response;
-  };
-
-  const statementCustomerId=()=>{
-    const value=document.querySelector('#arStmtCustomerSearch input')?.value||'';
-    return value.split(' — ')[0].trim();
-  };
-  const statementDate=()=>document.getElementById('arStmtDate')?.value||new Date().toISOString().slice(0,10);
-  const selectedInvoiceId=()=>document.querySelector('input[name="arInvPick"]:checked')?.value||'';
-  const appendInline=url=>url+(url.includes('?')?'&':'?')+'download=0';
-
-  function openPdfTopLevel(url,title){
-    const popup=window.open(appendInline(url),'_blank');
-    if(!popup){
-      alert(`Unable to open ${title}. Please allow pop-ups for this ERP site and try again.`);
-      return null;
-    }
-    try{popup.opener=null;}catch{}
-    return popup;
+      }catch(error){alert(error.message);}
+    };
   }
 
-  function printPdfTopLevel(url,title){
-    const popup=openPdfTopLevel(url,title);
-    if(!popup)return;
-    setTimeout(()=>{
-      try{popup.focus();popup.print();}
-      catch{ /* Browser PDF viewers still expose their own Print control. */ }
-    },1400);
+  async function enhance(){
+    const view=document.getElementById('view');if(!view)return;
+    try{
+      if(location.pathname==='/ar/processes/print-ar')return await renderPrintArWorkspace(view);
+      enhanceInvoiceMemoDetail(view);
+    }catch(error){console.error('AR document PDF parity enhancement failed',error);}
   }
 
-  document.addEventListener('click',event=>{
-    const button=event.target.closest('button');
-    if(!button)return;
-
-    if(button.id==='arStmtView'){
-      const customerId=statementCustomerId();
-      if(!customerId)return;
-      event.preventDefault();event.stopImmediatePropagation();
-      openPdfTopLevel(`/api/ar/reports/statement-pdf?customerId=${encodeURIComponent(customerId)}&statementDate=${encodeURIComponent(statementDate())}`,'statement');
-      return;
-    }
-    if(button.id==='arStmtPrint'){
-      const customerId=statementCustomerId();
-      if(!customerId)return;
-      event.preventDefault();event.stopImmediatePropagation();
-      printPdfTopLevel(`/api/ar/reports/statement-pdf?customerId=${encodeURIComponent(customerId)}&statementDate=${encodeURIComponent(statementDate())}`,'statement');
-      return;
-    }
-    if(button.id==='arInvView'){
-      const invoiceId=selectedInvoiceId();
-      if(!invoiceId)return;
-      event.preventDefault();event.stopImmediatePropagation();
-      openPdfTopLevel(`/api/ar/documents/${encodeURIComponent(invoiceId)}/pdf`,'invoice');
-      return;
-    }
-    if(button.id==='arInvPrint'){
-      const invoiceId=selectedInvoiceId();
-      if(!invoiceId)return;
-      event.preventDefault();event.stopImmediatePropagation();
-      printPdfTopLevel(`/api/ar/documents/${encodeURIComponent(invoiceId)}/pdf`,'invoice');
-    }
-  },true);
+  function boot(){
+    ensureStyles();
+    const view=document.getElementById('view');
+    if(view)new MutationObserver(()=>setTimeout(enhance,0)).observe(view,{childList:true,subtree:false});
+    window.addEventListener('popstate',()=>setTimeout(enhance,0));
+    setTimeout(enhance,0);
+  }
+  if(document.readyState==='loading')window.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
