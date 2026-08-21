@@ -56,10 +56,12 @@ test('MRP creates make suggestions for active BOM items and buy suggestions for 
 });
 
 test('manufacturing server patch is idempotent and adds the module router',()=>{
-  const source=`import { financialWorkbook } from './xlsxWorkbook.js';\nconst periodModules = ['AR','AP','GL','Inventory'];\nfunction financeSourceHref(module,documentType,reference){ const ref=String(reference),mod=String(module||'').toUpperCase(); if(mod==='SALES ORDERS'){const shipment=shipments.find(d=>String(d.id)===ref||String(d.shipmentNumber)===ref);if(shipment)return\`/sales-orders/shipments/\${encodeURIComponent(shipment.shipmentNumber||shipment.id)}\`;return\`/sales-orders/orders/\${encodeURIComponent(ref)}\`;}\n return'';\n}\nseedInventory();\nfunction adjustInventoryBalance(){ }\nif(method==='GET'&&pathname==='/api/inventory/summary') return json(res,200,invSummary());`;
+  const source=`import { financialWorkbook } from './xlsxWorkbook.js';\nconst periodModules = ['AR','AP','GL','Inventory'];\nconst financialPeriods=[];\nconst periodFromDate=(date)=>String(date||new Date().toISOString().slice(0,10)).slice(0,7);\nfunction ensurePeriod(periodId){ if(!/^\\d{4}-\\d{2}$/.test(String(periodId||''))) throw new Error('Period ID must use YYYY-MM format'); let p=financialPeriods.find(x=>x.periodId===periodId); if(!p){ p={financialYear:periodId.slice(0,4),periodId,periodDescription:'',startDate:'',endDate:'',arStatus:'Open',apStatus:'Open',glStatus:'Open',inventoryStatus:'Open',closedBy:'',closedDate:''}; financialPeriods.push(p); financialPeriods.sort((a,b)=>a.periodId.localeCompare(b.periodId)); } return p; }\nfunction financeSourceHref(module,documentType,reference){ const ref=String(reference),mod=String(module||'').toUpperCase(); if(mod==='SALES ORDERS'){const shipment=shipments.find(d=>String(d.id)===ref||String(d.shipmentNumber)===ref);if(shipment)return\`/sales-orders/shipments/\${encodeURIComponent(shipment.shipmentNumber||shipment.id)}\`;return\`/sales-orders/orders/\${encodeURIComponent(ref)}\`;}\n return'';\n}\nseedInventory();\nfunction adjustInventoryBalance(){ }\nif(method==='GET'&&pathname==='/api/inventory/summary') return json(res,200,invSummary());`;
   const once=applyManufacturingModulePatch(source),twice=applyManufacturingModulePatch(once);
   assert.equal(once,twice);
   assert.match(once,/createManufacturingRuntime/);
+  assert.match(once,/getManufacturingRuntime/);
+  assert.match(once,/manufacturingStatus:'Open'/);
   assert.match(once,/pathname\.startsWith\('\/api\/manufacturing'\)/);
   assert.match(once,/'Manufacturing'/);
 });
