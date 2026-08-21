@@ -9,9 +9,11 @@ import { applyManufacturingAgent3FinalizationPatch } from '../src/manufacturingA
 import { routePermission } from '../src/routePermissions.js';
 
 const original=await readFile(new URL('../src/manufacturingRuntime.js',import.meta.url),'utf8');
-const advanced=applyManufacturingAgent3AdvancedPatch(applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original))));
+const preAdvanced=applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original)));
+const advanced=applyManufacturingAgent3AdvancedPatch(preAdvanced);
+const advancedAgain=applyManufacturingAgent3AdvancedPatch(advanced);
 const reviewed=applyManufacturingAgent3FinalizationPatch(advanced);
-const reviewedAgain=applyManufacturingAgent3FinalizationPatch(applyManufacturingAgent3AdvancedPatch(reviewed));
+const reviewedAgain=applyManufacturingAgent3FinalizationPatch(reviewed);
 const { createManufacturingRuntime }=await import(`data:text/javascript;base64,${Buffer.from(reviewed).toString('base64')}`);
 
 function fixture(){
@@ -39,7 +41,8 @@ async function configure(f){
   await f.call('POST','/api/manufacturing/routings',{itemId:'FG-1',revision:'A',status:'Active',effectiveFrom:'2026-01-01',operations:[{sequence:10,workCenterId:'WC-ASSY',description:'Internal Assembly',runHoursPerUnit:.5},{sequence:20,workCenterId:'WC-QC',description:'Outside Finish',runHoursPerUnit:0,outsideProcessing:true,vendorId:'V-OUT',serviceItemId:'SVC-OUT',outsideUnitCost:12}]});
 }
 
-test('advanced patch is idempotent and adds professional manufacturing controls',()=>{
+test('advanced and finalization patches are idempotent at their pipeline stages',()=>{
+  assert.equal(advanced,advancedAgain);
   assert.equal(reviewed,reviewedAgain);
   assert.match(reviewed,/outsideProcessingReceivedCost/);
   assert.match(reviewed,/rollStandardCost/);
