@@ -24,6 +24,7 @@ import { prepareManufacturingAgent3GovernedRuntime } from './manufacturingAgent3
 import { prepareManufacturingAgent3IdempotentRuntime, patchManufacturingAgent3IdempotencyUiFile } from './manufacturingAgent3IdempotencyPatch.js';
 import { prepareManufacturingAgent3MrpExceptionsRuntime, patchManufacturingAgent3MrpExceptionsUiFile } from './manufacturingAgent3MrpExceptionsPatch.js';
 import { prepareManufacturingAgent3SubstitutionRuntime, patchManufacturingAgent3SubstitutionUiFile } from './manufacturingAgent3SubstitutionPatch.js';
+import { prepareManufacturingAgent3ReversalRuntime, patchManufacturingAgent3ReversalUiFile } from './manufacturingAgent3ReversalPatch.js';
 import { prepareManufacturingServer } from './manufacturingModulePatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -49,6 +50,7 @@ await patchManufacturingAgent3EngineeringUiFile();
 await patchManufacturingAgent3IdempotencyUiFile();
 await patchManufacturingAgent3MrpExceptionsUiFile();
 await patchManufacturingAgent3SubstitutionUiFile();
+await patchManufacturingAgent3ReversalUiFile();
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
 const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(cashPurchaseServerModule);
 const poPreferencesServerModule = await preparePurchaseOrderPreferencesServer(incomingPoServerModule);
@@ -70,6 +72,7 @@ await prepareManufacturingAgent3GovernedRuntime();
 await prepareManufacturingAgent3IdempotentRuntime();
 await prepareManufacturingAgent3MrpExceptionsRuntime();
 await prepareManufacturingAgent3SubstitutionRuntime();
+await prepareManufacturingAgent3ReversalRuntime();
 const manufacturingServerModule = await prepareManufacturingServer(financialReportMappingServerModule);
 const manufacturingServerUrl = new URL(manufacturingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(manufacturingServerUrl)], { stdio: 'inherit' });
