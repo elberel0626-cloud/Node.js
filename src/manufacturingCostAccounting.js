@@ -10,11 +10,14 @@ const EVENT_TYPES = Object.freeze({
 
 export const MANUFACTURING_EVENT_TYPES = EVENT_TYPES;
 
+// Defaults align to the ERP's actual chart of accounts:
+// 1507 Raw Inventory, 1508 WIP, 1509 Finished Goods,
+// 5101 Capitalized Labor & OH Adjustments, 5109 Inventory Adjustments.
 export const DEFAULT_MANUFACTURING_ACCOUNTS = Object.freeze({
-  wipInventory: '1507',
-  finishedGoodsInventory: '1507',
-  directLaborClearing: '5109',
-  manufacturingOverheadClearing: '5109',
+  wipInventory: '1508',
+  finishedGoodsInventory: '1509',
+  directLaborClearing: '5101',
+  manufacturingOverheadClearing: '5101',
   manufacturingVariance: '5109',
   scrapExpense: '5109'
 });
