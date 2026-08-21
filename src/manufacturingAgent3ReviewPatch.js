@@ -79,13 +79,6 @@ export function applyManufacturingAgent3RuntimePatch(source){
 
   source=replaceOnceOrAlready(
     source,
-    "for(const component of materialRequirements(bom,short)){planNeed(component.itemId,component.requiredQty,dueDate,{sourceType:'BOM Demand'",
-    "for(const component of materialRequirements(bom,short)){planNeed(component.itemId,component.requiredQty,dateMinusDays(dueDate,itemRow?.leadTimeDays||0),{sourceType:'BOM Demand'",
-    'MRP component release-date offset'
-  );
-
-  source=replaceOnceOrAlready(
-    source,
     "(?:\\/(release|issue-materials|report-operation|complete|close|cancel))?$/",
     "(?:\\/(release|issue-materials|return-materials|report-operation|complete|close|cancel))?$/",
     'production order material return route'
