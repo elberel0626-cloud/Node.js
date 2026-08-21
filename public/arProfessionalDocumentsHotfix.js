@@ -1,5 +1,5 @@
 (()=>{
-  const HOTFIX_KEY='arProfessionalDocumentsHotfixV3';
+  const HOTFIX_KEY='arProfessionalDocumentsHotfixV4';
   if(window[HOTFIX_KEY])return;
   window[HOTFIX_KEY]=true;
 
@@ -8,15 +8,15 @@
   const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 
   function ensureStyles(){
-    if(document.getElementById('arDocumentPdfParityStyles'))return;
+    if(document.getElementById('arDocumentPdfParityStylesV4'))return;
     const style=document.createElement('style');
-    style.id='arDocumentPdfParityStyles';
+    style.id='arDocumentPdfParityStylesV4';
     style.textContent=`
       .ar-pdf-modal{width:min(980px,90vw)!important;height:min(760px,86vh)!important}
       .ar-parity-pdf-overlay{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:100000;display:flex;align-items:center;justify-content:center;padding:24px}
       .ar-parity-pdf-modal{width:min(980px,90vw);height:min(760px,86vh);background:#fff;border-radius:8px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.35)}
       .ar-parity-pdf-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #dbe2ea}
-      .ar-parity-pdf-modal iframe{border:0;flex:1;width:100%}
+      .ar-parity-pdf-modal iframe{border:0;flex:1;width:100%;background:#fff}
       .ar-parity-customer-wrap{position:relative}.ar-parity-customer-results{position:absolute;z-index:1000;left:0;right:0;top:100%;max-height:260px;overflow:auto;background:#fff;border:1px solid #b9c3d2;box-shadow:0 8px 22px rgba(0,0,0,.14);display:none}
       .ar-parity-customer-results.open{display:block}.ar-parity-customer-option{padding:9px 10px;cursor:pointer;border-bottom:1px solid #edf0f4}.ar-parity-customer-option:hover{background:#eef4ff}.ar-parity-customer-option strong{display:block}.ar-parity-customer-option span{font-size:11px;color:#596579}
     `;
@@ -39,46 +39,37 @@
     return data;
   }
 
-  async function fetchPdf(url){
-    const response=await fetch(url,{credentials:'same-origin'});
-    if(!response.ok){
-      const text=await response.text();let message=text;
-      try{message=JSON.parse(text).error||message;}catch{}
-      throw new Error(message||`PDF request failed (${response.status})`);
-    }
-    return response.blob();
-  }
+  const documentPdfUrl=(id,download=false)=>`/api/ar/documents/${encodeURIComponent(id)}/pdf?download=${download?'1':'0'}`;
+  const statementPdfUrl=(customerId,date,download=false)=>`/api/ar/reports/statement-pdf?customerId=${encodeURIComponent(customerId)}&statementDate=${encodeURIComponent(date)}&download=${download?'1':'0'}`;
+  const fileName=(type,id)=>`${String(type||'AR Document').replace(/\s+/g,'-')}-${String(id||'document').replace(/[^a-zA-Z0-9._-]/g,'_')}.pdf`;
 
-  function pdfFileName(type,id){return `${String(type||'AR Document').replace(/\s+/g,'-')}-${String(id||'document').replace(/[^a-zA-Z0-9._-]/g,'_')}.pdf`;}
-  function pdfTitle(type,id){return `${type||'AR Document'} ${id||''}`.trim();}
-
-  function openPdfPreview(blob,title){
+  function openPdfPreviewUrl(url,title){
     document.querySelector('.ar-parity-pdf-overlay')?.remove();
-    const url=URL.createObjectURL(blob),overlay=document.createElement('div');
+    const overlay=document.createElement('div');
     overlay.className='ar-parity-pdf-overlay';
     overlay.innerHTML=`<div class='ar-parity-pdf-modal'><div class='ar-parity-pdf-head'><strong>${esc(title)}</strong><button type='button' class='ar-parity-pdf-close'>Close</button></div><iframe title='${esc(title)}'></iframe></div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('iframe').src=url;
-    const close=()=>{URL.revokeObjectURL(url);overlay.remove();};
+    const close=()=>overlay.remove();
     overlay.querySelector('.ar-parity-pdf-close').onclick=close;
     overlay.onclick=event=>{if(event.target===overlay)close();};
   }
 
-  async function runPdfAction({action,id,type}){
-    const url=`/api/ar/documents/${encodeURIComponent(id)}/pdf`;
-    const blob=await fetchPdf(`${url}?download=${action==='download'?'1':'0'}`);
-    if(action==='view')return openPdfPreview(blob,pdfTitle(type,id));
-    if(action==='download'){
-      const objectUrl=URL.createObjectURL(blob),link=document.createElement('a');
-      link.href=objectUrl;link.download=pdfFileName(type,id);link.click();
-      setTimeout(()=>URL.revokeObjectURL(objectUrl),2000);return;
-    }
-    if(action==='print'){
-      const objectUrl=URL.createObjectURL(blob),frame=document.createElement('iframe');
-      frame.style.position='fixed';frame.style.right='0';frame.style.bottom='0';frame.style.width='1px';frame.style.height='1px';frame.style.opacity='0';frame.src=objectUrl;
-      document.body.appendChild(frame);
-      frame.onload=()=>setTimeout(()=>{frame.contentWindow?.focus();frame.contentWindow?.print();setTimeout(()=>{URL.revokeObjectURL(objectUrl);frame.remove();},3000);},250);
-    }
+  function downloadUrl(url,name){
+    const link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();
+  }
+
+  function printUrl(url){
+    const frame=document.createElement('iframe');
+    frame.style.position='fixed';frame.style.right='0';frame.style.bottom='0';frame.style.width='1px';frame.style.height='1px';frame.style.opacity='0';frame.src=url;
+    document.body.appendChild(frame);
+    frame.onload=()=>setTimeout(()=>{try{frame.contentWindow?.focus();frame.contentWindow?.print();}finally{setTimeout(()=>frame.remove(),3000);}},350);
+  }
+
+  function runDocumentPdfAction(action,id,type){
+    if(action==='view')return openPdfPreviewUrl(documentPdfUrl(id,false),`${type} ${id}`);
+    if(action==='download')return downloadUrl(documentPdfUrl(id,true),fileName(type,id));
+    if(action==='print')return printUrl(documentPdfUrl(id,false));
   }
 
   function mountCustomerSearch(host,customers,onSelect){
@@ -90,8 +81,8 @@
   }
 
   async function renderPrintArWorkspace(view){
-    if(view.dataset.arPdfParityPrint==='1')return;
-    view.dataset.arPdfParityPrint='1';
+    if(view.dataset.arPdfParityPrint==='v4')return;
+    view.dataset.arPdfParityPrint='v4';
     ensureStyles();
     const customers=await getJson('/api/ar/customers');
     if(location.pathname!=='/ar/processes/print-ar')return;
@@ -102,7 +93,7 @@
     const syncButtons=()=>{
       ['arParityView','arParityDownload','arParityPrint'].forEach(id=>{const button=document.getElementById(id);if(button)button.disabled=!selected;});
       const email=document.getElementById('arParityEmail');if(email)email.disabled=!selected||!customer?.email;
-      const viewButton=document.getElementById('arParityView');if(viewButton)viewButton.textContent=selected?`View ${selected.type}`:'View Document';
+      const view=document.getElementById('arParityView');if(view)view.textContent=selected?`View ${selected.type}`:'View Document';
     };
     const render=()=>{
       const grid=document.getElementById('arParityGrid');if(!grid)return;
@@ -121,43 +112,55 @@
     };
     mountCustomerSearch(document.getElementById('arParityCustomerSearch'),customers,load);
 
-    document.getElementById('arParityView').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'view',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
-    document.getElementById('arParityDownload').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'download',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
-    document.getElementById('arParityPrint').onclick=async()=>{if(!selected)return;try{await runPdfAction({action:'print',id:selected.id,type:selected.type});}catch(error){message(error.message,true);}};
+    document.getElementById('arParityView').onclick=()=>selected&&runDocumentPdfAction('view',selected.id,selected.type);
+    document.getElementById('arParityDownload').onclick=()=>selected&&runDocumentPdfAction('download',selected.id,selected.type);
+    document.getElementById('arParityPrint').onclick=()=>selected&&runDocumentPdfAction('print',selected.id,selected.type);
     document.getElementById('arParityEmail').onclick=async()=>{if(!selected||!customer?.email)return;if(!confirm(`Email ${selected.type.toLowerCase()} ${selected.id} to ${customer.email}?`))return;const button=document.getElementById('arParityEmail');button.disabled=true;try{const result=await postJson('/api/ar/invoices/send',{invoiceIds:[selected.id]});const failure=result.results?.find(row=>row.emailStatus==='Failed');if(result.failed||failure)throw new Error(failure?.errorMessage||'Email failed.');message(`${selected.type} ${selected.id} emailed to ${customer.email}.`);}catch(error){message(error.message,true);}finally{syncButtons();}};
   }
 
   function enhanceInvoiceMemoDetail(view){
     if(!location.pathname.startsWith('/ar/doc/'))return;
-    const typeSelect=view.querySelector('#dtype'),inquiry=view.querySelector('#inqSel'),toolbar=view.querySelector('.erp-toolbar');
+    view.querySelector('#arDetailPdfView')?.remove();
+    const typeSelect=view.querySelector('#dtype'),inquiry=view.querySelector('#inqSel');
     const type=typeSelect?.value;
-    if(!PRINTABLE_TYPES.has(type)||!inquiry||!toolbar||inquiry.dataset.arPdfParityBound==='1')return;
+    if(!PRINTABLE_TYPES.has(type)||!inquiry||inquiry.dataset.arPdfParityBound==='v4')return;
     const id=decodeURIComponent(location.pathname.split('/').pop());if(!id||id==='<NEW>')return;
     ensureStyles();
 
     const replacement=inquiry.cloneNode(false);
-    replacement.id='inqSel';replacement.dataset.arPdfParityBound='1';replacement.dataset.professionalPdfBound='1';
+    replacement.id='inqSel';replacement.dataset.arPdfParityBound='v4';replacement.dataset.professionalPdfBound='1';
     replacement.innerHTML=`<option value=''>Inquiry</option><option value='view'>View ${esc(type)}</option><option value='download'>Download ${esc(type)}</option><option value='print'>Print ${esc(type)}</option><option value='je'>View Journal Entry</option><option value='apps'>View Applications</option>`;
     inquiry.replaceWith(replacement);
 
-    let viewButton=toolbar.querySelector('#arDetailPdfView');
-    if(!viewButton){viewButton=document.createElement('button');viewButton.type='button';viewButton.id='arDetailPdfView';toolbar.insertBefore(viewButton,replacement);}
-    viewButton.textContent=`View ${type}`;
-    viewButton.onclick=async()=>{try{await runPdfAction({action:'view',id,type});}catch(error){alert(error.message);}};
-
-    replacement.onchange=async()=>{
+    replacement.onchange=event=>{
+      event.preventDefault();event.stopPropagation();
       const action=replacement.value;replacement.value='';
-      try{
-        if(['view','download','print'].includes(action))return await runPdfAction({action,id,type});
-        if(action==='apps')return view.querySelector("[data-tab='tab-app']")?.click();
-        if(action==='je'){
-          const link=view.querySelector("#tab-fin a[href^='/finance/journal/']");
-          if(link)return link.click();
-          return view.querySelector("[data-tab='tab-fin']")?.click();
-        }
-      }catch(error){alert(error.message);}
+      if(['view','download','print'].includes(action))return runDocumentPdfAction(action,id,type);
+      if(action==='apps')return view.querySelector("[data-tab='tab-app']")?.click();
+      if(action==='je'){
+        const link=view.querySelector("#tab-fin a[href^='/finance/journal/']");
+        if(link)return link.click();
+        return view.querySelector("[data-tab='tab-fin']")?.click();
+      }
     };
   }
+
+  function statementSelection(){
+    const raw=document.querySelector('#arStmtCustomerSearch input')?.value||'';
+    return {customerId:raw.split(' — ')[0].trim(),date:document.getElementById('arStmtDate')?.value||new Date().toISOString().slice(0,10)};
+  }
+
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('button');if(!button)return;
+    if(button.id==='arStmtView'){
+      const {customerId,date}=statementSelection();if(!customerId)return;
+      event.preventDefault();event.stopImmediatePropagation();openPdfPreviewUrl(statementPdfUrl(customerId,date,false),`Statement - ${customerId}`);
+    }
+    if(button.id==='arStmtPrint'){
+      const {customerId,date}=statementSelection();if(!customerId)return;
+      event.preventDefault();event.stopImmediatePropagation();printUrl(statementPdfUrl(customerId,date,false));
+    }
+  },true);
 
   async function enhance(){
     const view=document.getElementById('view');if(!view)return;
