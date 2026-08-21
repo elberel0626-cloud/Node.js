@@ -1,0 +1,32 @@
+name: Verify Manufacturing Agent 3 Review
+
+on:
+  pull_request:
+    branches: [Development]
+
+permissions:
+  contents: read
+
+jobs:
+  manufacturing-review:
+    if: github.head_ref == 'agent2/manufacturing-module'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Manufacturing regression tests
+        run: node --test test/manufacturingModule.test.js test/manufacturingAgent3Review.test.js test/manufacturingAgent3Advanced.test.js test/manufacturingAgent3Ui.test.js test/manufacturingAgent3Engineering.test.js test/manufacturingAgent3Idempotency.test.js test/manufacturingAgent3MrpExceptions.test.js test/manufacturingAgent3Substitution.test.js test/manufacturingAgent3Reversal.test.js test/manufacturingAgent3Traceability.test.js
