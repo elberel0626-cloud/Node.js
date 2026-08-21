@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { applyManufacturingAgent3RuntimePatch } from '../src/manufacturingAgent3ReviewPatch.js';
 import { applyManufacturingAgent3PlanningPatch } from '../src/manufacturingAgent3PlanningPatch.js';
+import { applyManufacturingAgent3MasterQualityPatch } from '../src/manufacturingAgent3MasterQualityPatch.js';
 import { routePermission } from '../src/routePermissions.js';
 
 const originalSource=await readFile(new URL('../src/manufacturingRuntime.js',import.meta.url),'utf8');
 const controlPatchedSource=applyManufacturingAgent3RuntimePatch(originalSource);
-const patchedSource=applyManufacturingAgent3PlanningPatch(controlPatchedSource);
-const patchedAgain=applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(patchedSource));
+const planningPatchedSource=applyManufacturingAgent3PlanningPatch(controlPatchedSource);
+const patchedSource=applyManufacturingAgent3MasterQualityPatch(planningPatchedSource);
+const patchedAgain=applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(patchedSource)));
 const patchedModule=await import(`data:text/javascript;base64,${Buffer.from(patchedSource).toString('base64')}`);
 
 function fixture({onHand=10,manufacturingOpen=true}={}){
@@ -40,9 +42,13 @@ function fixture({onHand=10,manufacturingOpen=true}={}){
   return{runtime,call,getBalance,inventoryTransactions,journals,itemMaster,purchaseOrders,purchaseOrderLines,salesOrders,salesOrderLines,setManufacturingOpen:value=>{isManufacturingOpen=value;}};
 }
 
-async function addBom(f,{duplicate=false,qtyPer=1}={}){
+async function addBom(f,{duplicate=false,qtyPer=1,revision='A',status='Active',effectiveFrom='2026-01-01',effectiveTo=''}={}){
   const components=duplicate?[{lineId:'L1',itemId:'RM-1',qtyPer:1,issueMethod:'Manual'},{lineId:'L2',itemId:'RM-1',qtyPer:1,issueMethod:'Manual'}]:[{lineId:'L1',itemId:'RM-1',qtyPer,issueMethod:'Manual'}];
-  await f.call('POST','/api/manufacturing/boms',{itemId:'FG-1',revision:'A',status:'Active',baseQty:1,yieldPct:100,components});
+  return f.call('POST','/api/manufacturing/boms',{itemId:'FG-1',revision,status,effectiveFrom,effectiveTo,baseQty:1,yieldPct:100,components});
+}
+
+async function addRouting(f){
+  return f.call('POST','/api/manufacturing/routings',{itemId:'FG-1',revision:'A',status:'Active',effectiveFrom:'2026-01-01',operations:[{sequence:10,workCenterId:'WC-ASSY',description:'Assembly',setupHours:0,runHoursPerUnit:1,qualityCheckpoint:true}]});
 }
 
 test('Agent 3 manufacturing runtime patches are idempotent and install required controls',()=>{
@@ -52,6 +58,8 @@ test('Agent 3 manufacturing runtime patches are idempotent and install required 
   assert.match(patchedSource,/Production Material Return/);
   assert.match(patchedSource,/plannedSupplyBy/);
   assert.match(patchedSource,/componentNeedDate=dateMinusDays/);
+  assert.match(patchedSource,/assertNoEffectiveOverlap/);
+  assert.match(patchedSource,/Rework Pending/);
   assert.match(patchedSource,/Math\.max\(Number\(op\.actualLaborHours\|\|0\),Number\(op\.actualMachineHours\|\|0\)\)/);
   assert.equal(routePermission('POST','/api/manufacturing/orders/MO-1001/return-materials'),'INVENTORY_POST');
 });
@@ -82,6 +90,24 @@ test('aggregate issue prevalidation prevents partial mutation when duplicate BOM
   assert.equal(f.inventoryTransactions.length,0);
 });
 
+test('duplicate component items require BOM line identification for manual issue',async()=>{
+  const f=fixture({onHand:10});await addBom(f,{duplicate:true});
+  const order=await f.call('POST','/api/manufacturing/orders',{itemId:'FG-1',quantity:1});
+  await f.call('POST',`/api/manufacturing/orders/${order.id}/release`,{});
+  await assert.rejects(()=>f.call('POST',`/api/manufacturing/orders/${order.id}/issue-materials`,{lines:[{itemId:'RM-1',quantity:1}]}),/Specify lineId/);
+  assert.equal(f.getBalance('RM-1','MAIN','MAIN-A1').qtyOnHand,10);
+});
+
+test('BOM revision upsert is deterministic and overlapping active revisions are blocked',async()=>{
+  const f=fixture();
+  await addBom(f,{revision:'A',qtyPer:1,effectiveFrom:'2026-01-01'});
+  await addBom(f,{revision:'A',qtyPer:2,effectiveFrom:'2026-01-01'});
+  const rows=await f.call('GET','/api/manufacturing/boms');
+  assert.equal(rows.length,1);
+  assert.equal(rows[0].components[0].qtyPer,2);
+  await assert.rejects(()=>addBom(f,{revision:'B',qtyPer:1,effectiveFrom:'2026-06-01'}),/overlaps active revision A/);
+});
+
 test('issued material can be returned from WIP with reversing GL and inventory audit',async()=>{
   const f=fixture({onHand:10});await addBom(f,{qtyPer:2});
   const order=await f.call('POST','/api/manufacturing/orders',{itemId:'FG-1',quantity:1});
@@ -109,4 +135,43 @@ test('MRP does not use purchase or production supply scheduled after the require
   assert.equal(make.dueDate,'2026-08-30');
   assert.ok(buy,'an RM buy plan should be created despite a later purchase order');
   assert.equal(buy.dueDate,'2026-08-28');
+});
+
+test('rework disposition creates a quality-gated rework operation and a passing inspection clears the hold',async()=>{
+  const f=fixture({onHand:10});await addBom(f,{qtyPer:1});await addRouting(f);
+  const order=await f.call('POST','/api/manufacturing/orders',{itemId:'FG-1',quantity:1});
+  await f.call('POST',`/api/manufacturing/orders/${order.id}/release`,{});
+  await f.call('POST',`/api/manufacturing/orders/${order.id}/issue-materials`,{});
+  await f.call('POST','/api/manufacturing/quality/inspections',{productionOrderId:order.id,operationSequence:10,qtyInspected:1,qtyAccepted:0,qtyRejected:1,result:'Fail',failureReason:'Dimension out of tolerance'});
+  let [ncr]=await f.call('GET','/api/manufacturing/quality/nonconformances');
+  ncr=await f.call('POST',`/api/manufacturing/quality/nonconformances/${ncr.id}/disposition`,{disposition:'Rework',reworkHours:0.5});
+  assert.equal(ncr.status,'Rework Pending');
+  assert.equal(ncr.disposition,'Rework');
+  const reworkSequence=ncr.reworkOperationSequence;
+  const held=await f.call('GET',`/api/manufacturing/orders/${order.id}`);
+  assert.equal(held.qualityHold,true);
+  assert.ok(held.operations.some(op=>op.sequence===reworkSequence&&op.reworkForNcr===ncr.id));
+  await f.call('POST','/api/manufacturing/quality/inspections',{productionOrderId:order.id,operationSequence:reworkSequence,qtyInspected:1,qtyAccepted:1,qtyRejected:0,result:'Pass'});
+  [ncr]=await f.call('GET','/api/manufacturing/quality/nonconformances');
+  assert.equal(ncr.status,'Closed');
+  assert.equal(ncr.disposition,'Rework Completed');
+  const released=await f.call('GET',`/api/manufacturing/orders/${order.id}`);
+  assert.equal(released.qualityHold,false);
+});
+
+test('scrap NCR disposition relieves WIP to manufacturing variance and records production scrap',async()=>{
+  const f=fixture({onHand:10});await addBom(f,{qtyPer:1});
+  const order=await f.call('POST','/api/manufacturing/orders',{itemId:'FG-1',quantity:2});
+  await f.call('POST',`/api/manufacturing/orders/${order.id}/release`,{});
+  await f.call('POST',`/api/manufacturing/orders/${order.id}/issue-materials`,{});
+  await f.call('POST','/api/manufacturing/quality/inspections',{productionOrderId:order.id,operationSequence:0,qtyInspected:1,qtyAccepted:0,qtyRejected:1,result:'Fail',failureReason:'Scrap'});
+  let [ncr]=await f.call('GET','/api/manufacturing/quality/nonconformances');
+  ncr=await f.call('POST',`/api/manufacturing/quality/nonconformances/${ncr.id}/disposition`,{disposition:'Scrap'});
+  assert.equal(ncr.status,'Closed');
+  const updated=await f.call('GET',`/api/manufacturing/orders/${order.id}`);
+  assert.equal(updated.qtyScrapped,1);
+  assert.equal(updated.costs.scrap,10);
+  assert.ok(f.inventoryTransactions.some(row=>row.transactionType==='Production Scrap'&&row.referenceNumber===ncr.id));
+  const scrapJournal=f.journals.at(-1);
+  assert.deepEqual(scrapJournal.lines.map(line=>[line.account,line.debit,line.credit]),[['5109',10,0],['1508',0,10]]);
 });
