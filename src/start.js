@@ -13,6 +13,7 @@ import { prepareIncomingReviewSaveServer } from './incomingReviewSavePatch.js';
 import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.js';
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
 import { prepareArPaymentGlApplicationsServer } from './arPaymentGlApplicationsPatch.js';
+import { prepareArPaymentApplicationConsistencyServer } from './arPaymentApplicationConsistencyPatch.js';
 import { prepareFinancialReportMappingServer } from './financialReportMappingPatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -43,7 +44,8 @@ const incomingReviewSaveServerModule = await prepareIncomingReviewSaveServer(apI
 const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer(incomingReviewSaveServerModule);
 const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apRuntimeReliabilityServerModule);
 const arPaymentGlApplicationsServerModule = await prepareArPaymentGlApplicationsServer(arProfessionalDocumentsServerModule);
-const financialReportMappingServerModule = await prepareFinancialReportMappingServer(arPaymentGlApplicationsServerModule);
+const arPaymentApplicationConsistencyServerModule = await prepareArPaymentApplicationConsistencyServer(arPaymentGlApplicationsServerModule);
+const financialReportMappingServerModule = await prepareFinancialReportMappingServer(arPaymentApplicationConsistencyServerModule);
 const financialReportMappingServerUrl = new URL(financialReportMappingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(financialReportMappingServerUrl)], { stdio: 'inherit' });
 await import(financialReportMappingServerModule);
