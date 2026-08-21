@@ -27,6 +27,7 @@ import { prepareManufacturingAgent3SubstitutionRuntime, patchManufacturingAgent3
 import { prepareManufacturingAgent3ReversalRuntime, patchManufacturingAgent3ReversalUiFile } from './manufacturingAgent3ReversalPatch.js';
 import { prepareManufacturingServer } from './manufacturingModulePatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
+import { patchInventoryNavigationFile } from './inventoryNavigationPatch.js';
 
 async function makePoPreferencesRuntimeInitializationSafe(modulePath){
   const moduleUrl=new URL(modulePath,import.meta.url);
@@ -45,6 +46,7 @@ async function makePoPreferencesRuntimeInitializationSafe(modulePath){
 normalizeSampleUnreleasedDocuments({ arDocuments, apDocuments });
 applyStatementClassification(glAccounts);
 await patchApBillsGridFile();
+await patchInventoryNavigationFile();
 await patchManufacturingAgent3UiFile();
 await patchManufacturingAgent3EngineeringUiFile();
 await patchManufacturingAgent3IdempotencyUiFile();
