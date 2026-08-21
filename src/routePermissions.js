@@ -27,6 +27,8 @@ export const BUSINESS_ROUTE_PERMISSIONS=Object.freeze([
   [['GET'],/^\/api\/manufacturing(?:\/.*)?$/,'INVENTORY_READ'],
   [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/create-subcontract-po$/,'PO_CREATE'],
   [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/substitute-material$/,'INVENTORY_ADJUST'],
+  [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/reopen$/,'SYSTEM_CONFIGURATION_ADMIN'],
+  [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/reverse-completion$/,'INVENTORY_POST'],
   [['POST'],/^\/api\/manufacturing\/orders\/[^/]+\/(?:issue-materials|return-materials|report-operation|complete|close)$/,'INVENTORY_POST'],
   [['POST'],/^\/api\/manufacturing\/cost-rollup\/apply$/,'SYSTEM_CONFIGURATION_ADMIN'],
   [['POST'],/^\/api\/manufacturing\/engineering-changes\/[^/]+\/(?:approve|reject|apply)$/,'SYSTEM_CONFIGURATION_ADMIN'],
