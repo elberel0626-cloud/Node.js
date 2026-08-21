@@ -25,6 +25,21 @@ test('individual AR documents expose PDF actions only through Inquiry',()=>{
   assert.match(hotfix,/replacement\.id='inqSel'/);
 });
 
+test('Inquiry PDF actions are captured before the legacy invoice onchange handler',()=>{
+  assert.match(hotfix,/document\.addEventListener\('change',event=>/);
+  assert.match(hotfix,/select\.id!=='inqSel'/);
+  assert.match(hotfix,/PDF_ACTIONS\.has\(action\)/);
+  assert.match(hotfix,/event\.stopImmediatePropagation\(\)/);
+  assert.match(hotfix,/runDocumentPdfAction\(action,context\.id,context\.type\)/);
+});
+
+test('Print AR and individual Inquiry call the same document PDF action function',()=>{
+  assert.match(hotfix,/arParityView'\)\.onclick=\(\)=>selected&&runDocumentPdfAction\('view',selected\.id,selected\.type\)/);
+  assert.match(hotfix,/arParityPrint'\)\.onclick=\(\)=>selected&&runDocumentPdfAction\('print',selected\.id,selected\.type\)/);
+  assert.match(hotfix,/if\(action==='view'\)return openPdfPreviewUrl\(documentPdfUrl\(id,false\)/);
+  assert.match(hotfix,/if\(action==='print'\)return printUrl\(documentPdfUrl\(id,false\)\)/);
+});
+
 test('AR PDF endpoints allow only same-origin framing for the in-app preview',()=>{
   const sameOriginHeaders=(serverPatch.match(/'X-Frame-Options':'SAMEORIGIN'/g)||[]).length;
   const frameAncestors=(serverPatch.match(/Content-Security-Policy':"frame-ancestors 'self'"/g)||[]).length;
