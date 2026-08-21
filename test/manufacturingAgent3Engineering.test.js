@@ -8,10 +8,12 @@ import { applyManufacturingAgent3AdvancedPatch } from '../src/manufacturingAgent
 import { applyManufacturingAgent3FinalizationPatch } from '../src/manufacturingAgent3FinalizationPatch.js';
 import { applyManufacturingAgent3UiRuntimePatch, applyManufacturingAgent3UiClientPatch } from '../src/manufacturingAgent3UiPatch.js';
 import { applyManufacturingAgent3EngineeringRuntimePatch, applyManufacturingAgent3EngineeringClientPatch } from '../src/manufacturingAgent3EngineeringPatch.js';
+import { applyManufacturingAgent3GovernancePatch } from '../src/manufacturingAgent3GovernancePatch.js';
 import { routePermission } from '../src/routePermissions.js';
 
 const original=await readFile(new URL('../src/manufacturingRuntime.js',import.meta.url),'utf8');
-const reviewed=applyManufacturingAgent3EngineeringRuntimePatch(applyManufacturingAgent3UiRuntimePatch(applyManufacturingAgent3FinalizationPatch(applyManufacturingAgent3AdvancedPatch(applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original)))))));
+const engineering=applyManufacturingAgent3EngineeringRuntimePatch(applyManufacturingAgent3UiRuntimePatch(applyManufacturingAgent3FinalizationPatch(applyManufacturingAgent3AdvancedPatch(applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original)))))));
+const reviewed=applyManufacturingAgent3GovernancePatch(engineering);
 const { createManufacturingRuntime }=await import(`data:text/javascript;base64,${Buffer.from(reviewed).toString('base64')}`);
 
 function fixture(){
@@ -24,10 +26,17 @@ function fixture(){
   return{runtime,call};
 }
 
+function bomInput(revision,status,effectiveFrom,qtyPer=revision==='A'?1:1.2){return{itemId:'FG',revision,status,effectiveFrom,baseQty:1,yieldPct:100,components:[{lineId:'1',itemId:'RM',qtyPer,supplyType:'Buy',issueMethod:'Manual'}]};}
+function routingInput(revision,status,effectiveFrom,runHoursPerUnit=revision==='A'?0.5:0.4){return{itemId:'FG',revision,status,effectiveFrom,operations:[{sequence:10,workCenterId:'WC-ASSY',description:`Assembly ${revision}`,runHoursPerUnit}]};}
 async function createRevisionSet(f,revision,status,effectiveFrom){
-  await f.call('POST','/api/manufacturing/boms',{itemId:'FG',revision,status,effectiveFrom,baseQty:1,yieldPct:100,components:[{lineId:'1',itemId:'RM',qtyPer:revision==='A'?1:1.2,supplyType:'Buy',issueMethod:'Manual'}]});
-  await f.call('POST','/api/manufacturing/routings',{itemId:'FG',revision,status,effectiveFrom,operations:[{sequence:10,workCenterId:'WC-ASSY',description:`Assembly ${revision}`,runHoursPerUnit:revision==='A'?0.5:0.4}]});
+  await f.call('POST','/api/manufacturing/boms',bomInput(revision,status,effectiveFrom));
+  await f.call('POST','/api/manufacturing/routings',routingInput(revision,status,effectiveFrom));
 }
+
+test('engineering and governance patches remain idempotent in sequence',()=>{
+  assert.equal(engineering,applyManufacturingAgent3EngineeringRuntimePatch(engineering));
+  assert.equal(reviewed,applyManufacturingAgent3GovernancePatch(reviewed));
+});
 
 test('engineering workflow requires draft revisions and four-eyes approval',async()=>{
   const f=fixture();await createRevisionSet(f,'A','Active','2026-01-01');await createRevisionSet(f,'B','Draft','2026-09-01');
@@ -39,6 +48,18 @@ test('engineering workflow requires draft revisions and four-eyes approval',asyn
   const approved=await f.call('POST',`/api/manufacturing/engineering-changes/${eco.id}/approve`,{},'manager');
   assert.equal(approved.status,'Approved');
   assert.equal(approved.approvedBy,'manager');
+});
+
+test('active manufacturing structures cannot be edited or activated outside the ECO path',async()=>{
+  const f=fixture();await createRevisionSet(f,'A','Active','2026-01-01');
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/boms',bomInput('A','Active','2026-01-01',2)),/Active BOM revisions are frozen/);
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/routings',routingInput('A','Active','2026-01-01',1)),/Active Routing revisions are frozen/);
+  await f.call('POST','/api/manufacturing/boms',bomInput('B','Draft','2026-09-01'));
+  await f.call('POST','/api/manufacturing/routings',routingInput('B','Draft','2026-09-01'));
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/boms',bomInput('B','Active','2026-09-01')),/only through an approved Engineering Change/);
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/routings',routingInput('B','Active','2026-09-01')),/only through an approved Engineering Change/);
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/boms',bomInput('C','Active','2026-10-01')),/Create BOM revision C as Draft/);
+  await assert.rejects(()=>f.call('POST','/api/manufacturing/routings',routingInput('C','Active','2026-10-01')),/Create Routing revision C as Draft/);
 });
 
 test('applying an approved ECO effectivity-dates old revisions and preserves frozen open orders',async()=>{
