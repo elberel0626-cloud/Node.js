@@ -14,6 +14,19 @@ function replaceOnce(source,oldText,newText,label){
   return source.slice(0,first)+newText+source.slice(first+oldText.length);
 }
 
+function replaceInSection(source,startMarker,endMarker,oldText,newText,label){
+  const start=source.indexOf(startMarker);
+  if(start<0)throw new Error(`AR payment GL integration failed: ${label} section start was not found.`);
+  const end=source.indexOf(endMarker,start+startMarker.length);
+  if(end<0)throw new Error(`AR payment GL integration failed: ${label} section end was not found.`);
+  const section=source.slice(start,end);
+  const first=section.indexOf(oldText);
+  if(first<0)throw new Error(`AR payment GL integration failed: ${label} was not found.`);
+  if(section.indexOf(oldText,first+oldText.length)>=0)throw new Error(`AR payment GL integration failed: ${label} matched more than once in its section.`);
+  const patched=section.slice(0,first)+newText+section.slice(first+oldText.length);
+  return source.slice(0,start)+patched+source.slice(end);
+}
+
 export function applyArPaymentGlApplicationsServerPatch(source){
   if(source.includes('function normalizeArPaymentGlApplications('))return source;
 
@@ -60,36 +73,46 @@ function arPostingLines(doc){`,
     'AR payment posting offsets'
   );
 
-  source=replaceOnce(
+  source=replaceInSection(
     source,
+    "if(method==='POST'&&pathname==='/api/ar/documents'){",
+    "if(method==='PUT'&&pathname.startsWith('/api/ar/documents/'))",
     `applications:b.applications||[],method:b.method,checkNumber:b.checkNumber,cashAccount:b.cashAccount||'1079',financeChargeAmount:Number(b.financeChargeAmount||0),writeOffAmount:Number(b.writeOffAmount||0)};`,
     `applications:b.applications||[],glApplications:b.glApplications||[],method:b.method,checkNumber:b.checkNumber,cashAccount:b.cashAccount||'1079',financeChargeAmount:Number(b.financeChargeAmount||0),writeOffAmount:Number(b.writeOffAmount||0)};`,
     'AR payment stored GL applications'
   );
 
-  source=replaceOnce(
+  source=replaceInSection(
     source,
+    "if(method==='POST'&&pathname==='/api/ar/documents'){",
+    "if(method==='PUT'&&pathname.startsWith('/api/ar/documents/'))",
     `if(doc.type==='Payment'){ if(!doc.date) return json(res,400,{error:'Payment date required'});`,
     `if(doc.type==='Payment'){ try{doc.glApplications=normalizeArPaymentGlApplications(doc.glApplications||[],doc.cashAccount);}catch(error){return json(res,400,{error:error.message});} if(!doc.date) return json(res,400,{error:'Payment date required'});`,
     'AR payment create GL validation'
   );
 
-  source=replaceOnce(
+  source=replaceInSection(
     source,
+    "if(method==='POST'&&pathname==='/api/ar/documents'){",
+    "if(method==='PUT'&&pathname.startsWith('/api/ar/documents/'))",
     `const totalApplied=(doc.applications||[]).reduce((s,a)=>s+Number(a.amount||0),0); const totalAvail=Number(doc.amount||0)+Number(doc.financeChargeAmount||0)+Number(doc.writeOffAmount||0); if(totalApplied>totalAvail) return json(res,400,{error:'Total applied cannot exceed available payment amount'});`,
     `const arDocumentApplied=(doc.applications||[]).reduce((s,a)=>s+Number(a.amount||0),0); const glApplied=arPaymentGlTotal(doc); const totalApplied=arDocumentApplied+glApplied; const totalAvail=Number(doc.amount||0)+Number(doc.financeChargeAmount||0)+Number(doc.writeOffAmount||0); if(totalApplied>totalAvail+0.005) return json(res,400,{error:'Total AR and GL applied amount cannot exceed the available payment amount'});`,
     'AR payment create applied total'
   );
 
-  source=replaceOnce(
+  source=replaceInSection(
     source,
+    "if(method==='PUT'&&pathname.startsWith('/api/ar/documents/'))",
+    "if(method==='DELETE'&&pathname.startsWith('/api/ar/documents/'))",
     `const b=await body(req); if(d.type==='Payment'&&b.amount!==undefined&&Number(b.amount)<=0) return json(res,400,{error:'Payment amount must be greater than $0.00.'});`,
     `const b=await body(req); if(d.type==='Payment'&&b.amount!==undefined&&Number(b.amount)<=0) return json(res,400,{error:'Payment amount must be greater than $0.00.'}); if(d.type==='Payment'){try{b.glApplications=normalizeArPaymentGlApplications(b.glApplications??d.glApplications??[],b.cashAccount??d.cashAccount);}catch(error){return json(res,400,{error:error.message});} const nextApplications=Array.isArray(b.applications)?b.applications:(d.applications||[]); const nextAvailable=Number(b.amount??d.amount??0)+Number(b.financeChargeAmount??d.financeChargeAmount??0)+Number(b.writeOffAmount??d.writeOffAmount??0); const nextApplied=nextApplications.reduce((sum,row)=>sum+Number(row.amount||0),0)+b.glApplications.reduce((sum,row)=>sum+Number(row.amount||0),0); if(nextApplied>nextAvailable+0.005)return json(res,400,{error:'Total AR and GL applied amount cannot exceed the available payment amount'});}`,
     'AR payment update GL validation'
   );
 
-  source=replaceOnce(
+  source=replaceInSection(
     source,
+    "if(method==='POST'&&pathname==='/api/ar/documents/post'){",
+    "if(method==='POST'&&pathname==='/api/ar/documents/void')",
     `d.unappliedBalance=(Number(d.amount||0)+Number(d.financeChargeAmount||0)+Number(d.writeOffAmount||0))-totalApplied;`,
     `d.unappliedBalance=(Number(d.amount||0)+Number(d.financeChargeAmount||0)+Number(d.writeOffAmount||0))-totalApplied-arPaymentGlTotal(d);`,
     'AR payment posted unapplied balance'
