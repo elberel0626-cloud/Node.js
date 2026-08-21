@@ -19,6 +19,7 @@ import { prepareManufacturingAgent3MasterQualityRuntime } from './manufacturingA
 import { prepareManufacturingAgent3AdvancedRuntime } from './manufacturingAgent3AdvancedPatch.js';
 import { prepareManufacturingAgent3FinalizedRuntime } from './manufacturingAgent3FinalizationPatch.js';
 import { prepareManufacturingAgent3UiRuntime, patchManufacturingAgent3UiFile } from './manufacturingAgent3UiPatch.js';
+import { prepareManufacturingAgent3EngineeringRuntime, patchManufacturingAgent3EngineeringUiFile } from './manufacturingAgent3EngineeringPatch.js';
 import { prepareManufacturingServer } from './manufacturingModulePatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -40,6 +41,7 @@ normalizeSampleUnreleasedDocuments({ arDocuments, apDocuments });
 applyStatementClassification(glAccounts);
 await patchApBillsGridFile();
 await patchManufacturingAgent3UiFile();
+await patchManufacturingAgent3EngineeringUiFile();
 const cashPurchaseServerModule = await prepareCashPurchaseApplicationServer();
 const incomingPoServerModule = await prepareIncomingPurchaseOrderWorkflowServer(cashPurchaseServerModule);
 const poPreferencesServerModule = await preparePurchaseOrderPreferencesServer(incomingPoServerModule);
@@ -56,6 +58,7 @@ await prepareManufacturingAgent3MasterQualityRuntime();
 await prepareManufacturingAgent3AdvancedRuntime();
 await prepareManufacturingAgent3FinalizedRuntime();
 await prepareManufacturingAgent3UiRuntime();
+await prepareManufacturingAgent3EngineeringRuntime();
 const manufacturingServerModule = await prepareManufacturingServer(financialReportMappingServerModule);
 const manufacturingServerUrl = new URL(manufacturingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(manufacturingServerUrl)], { stdio: 'inherit' });
