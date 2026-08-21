@@ -339,7 +339,15 @@
 
     document.addEventListener('click', event => {
       const tab = event.target.closest('#paymentForm .erp-tabs .tab');
-      if (tab) queueMicrotask(() => document.getElementById('gl-tab')?.classList.toggle('hidden', tab.dataset.tab !== 'gl-tab'));
+      if (tab?.dataset.tab === 'gl-tab') {
+        event.preventDefault();
+        document.querySelectorAll('#paymentForm .erp-tabs .tab').forEach(node => node.classList.remove('active'));
+        tab.classList.add('active');
+        ['docs-tab','hist-tab','orders-tab','fin-tab','appr-tab','fc-tab'].forEach(id => document.getElementById(id)?.classList.add('hidden'));
+        document.getElementById('gl-tab')?.classList.remove('hidden');
+      } else if (tab) {
+        queueMicrotask(() => document.getElementById('gl-tab')?.classList.add('hidden'));
+      }
       if (!event.target.closest('.payment-gl-account-suggestions') && !event.target.matches?.("input[data-payment-gl-lookup='1']")) {
         document.querySelectorAll('.payment-gl-account-suggestions').forEach(panel => panel.classList.add('hidden'));
       }
