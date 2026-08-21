@@ -5,11 +5,13 @@ import { applyManufacturingAgent3RuntimePatch } from '../src/manufacturingAgent3
 import { applyManufacturingAgent3PlanningPatch } from '../src/manufacturingAgent3PlanningPatch.js';
 import { applyManufacturingAgent3MasterQualityPatch } from '../src/manufacturingAgent3MasterQualityPatch.js';
 import { applyManufacturingAgent3AdvancedPatch } from '../src/manufacturingAgent3AdvancedPatch.js';
+import { applyManufacturingAgent3FinalizationPatch } from '../src/manufacturingAgent3FinalizationPatch.js';
 import { routePermission } from '../src/routePermissions.js';
 
 const original=await readFile(new URL('../src/manufacturingRuntime.js',import.meta.url),'utf8');
-const reviewed=applyManufacturingAgent3AdvancedPatch(applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original))));
-const reviewedAgain=applyManufacturingAgent3AdvancedPatch(reviewed);
+const advanced=applyManufacturingAgent3AdvancedPatch(applyManufacturingAgent3MasterQualityPatch(applyManufacturingAgent3PlanningPatch(applyManufacturingAgent3RuntimePatch(original))));
+const reviewed=applyManufacturingAgent3FinalizationPatch(advanced);
+const reviewedAgain=applyManufacturingAgent3FinalizationPatch(applyManufacturingAgent3AdvancedPatch(reviewed));
 const { createManufacturingRuntime }=await import(`data:text/javascript;base64,${Buffer.from(reviewed).toString('base64')}`);
 
 function fixture(){
