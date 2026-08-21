@@ -35,8 +35,8 @@ export function applyManufacturingAgent3MrpExceptionsRuntimePatch(source){
 
   source=replaceOnceOrAlready(
     source,
-    "if(method==='GET'&&pathname==='/api/manufacturing/mrp/runs')return{status:200,body:mrpRuns.slice().reverse()};",
-    "if(method==='GET'&&pathname==='/api/manufacturing/mrp/action-messages')return{status:200,body:mrpActionMessages({horizonDays:Number(query.horizonDays||settings.planningHorizonDays),deferDays:Number(query.deferDays||7)})};if(method==='GET'&&pathname==='/api/manufacturing/mrp/runs')return{status:200,body:mrpRuns.slice().reverse()};",
+    "if(method==='GET'&&pathname==='/api/manufacturing/mrp/runs')",
+    "if(method==='GET'&&pathname==='/api/manufacturing/mrp/action-messages')return{status:200,body:mrpActionMessages({horizonDays:Number(query.horizonDays||settings.planningHorizonDays),deferDays:Number(query.deferDays||7)})};if(method==='GET'&&pathname==='/api/manufacturing/mrp/runs')",
     'MRP action-message endpoint'
   );
   return source;
