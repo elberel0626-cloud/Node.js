@@ -6,6 +6,7 @@
   let eligibilityKey='';
   let reconcileQueued=false;
   let reconciling=false;
+  let activeForm=null;
 
   const paymentForm=()=>document.getElementById('paymentForm');
   const paymentStatus=()=>{
@@ -109,11 +110,18 @@
   }
 
   async function reconcile(){
-    if(reconciling||!paymentForm())return;
+    const form=paymentForm();
+    if(reconciling||!form)return;
+    if(form!==activeForm){
+      activeForm=form;
+      documentCacheKey='';
+      documentCache=null;
+      eligibilityKey='';
+    }
     reconciling=true;
     try{
       const payment=await readCurrentPayment();
-      if(!paymentForm())return;
+      if(form!==paymentForm())return;
       hydrateSavedApplications(payment);
       await pruneIneligibleInvoices(payment);
       syncHeaderTotals(payment);
