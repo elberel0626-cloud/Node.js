@@ -25,7 +25,7 @@ function replaceRange(source,startMarker,endMarker,replacement,label){
 
 const conversionBlock=String.raw` const vendor=selectedIncomingVendor||vendors.find(v=>v.id===(r.vendorMatch?.vendorId||r.extracted?.vendorNumber||r.draftBill?.vendorId));
  const approverUserId=transactionApproverId({overrideUserId:r.approverUserId,vendor});
- const selectedDocumentType=['Bill','Prepayment'].includes(r.draftBill?.type)?r.draftBill.type:'Bill';
+ const selectedDocumentType=['Bill','Credit Adjustment'].includes(r.draftBill?.type)?r.draftBill.type:'Bill';
  const currentPoNumber=String(r.extracted?.purchaseOrderNumber||r.extracted?.poNumber||r.poMatch?.poNumber||(r.draftBill?.lines||[]).find(line=>line.poNumber)?.poNumber||'').trim();
  const currentPo=currentPoNumber?purchaseOrders.find(po=>(po.poNumber===currentPoNumber||po.id===currentPoNumber)&&po.vendorId===vendor.id):null;
  const currentPoLines=currentPo?purchaseOrderLines.filter(line=>line.poId===currentPo.id):[];
@@ -42,8 +42,8 @@ const conversionBlock=String.raw` const vendor=selectedIncomingVendor||vendors.f
  });
  const billDate=r.extracted?.invoiceDate||r.draftBill?.date||new Date().toISOString().slice(0,10);
  const billAmount=Number(r.extracted?.grossInvoiceAmount??r.extracted?.totalAmount??r.draftBill?.amount??0);
- const incomingBillId=(selectedDocumentType==='Prepayment'?'PREPAY':'BILL')+'-'+String(apDocuments.length+1001).padStart(4,'0');
- const d={...r.draftBill,vendorId:vendor.id,vendorName:vendor.name,approverUserId,type:selectedDocumentType,date:billDate,postDate:billDate,postPeriod:periodFromDate(billDate),dueDate:r.extracted?.dueDate||r.draftBill?.dueDate||billDate,terms:r.extracted?.paymentTerms||r.extracted?.terms||r.draftBill?.terms||vendor.terms||'NET30',vendorRef:r.extracted?.invoiceNumber||r.draftBill?.vendorRef||'',invoiceNumber:r.extracted?.invoiceNumber||r.draftBill?.invoiceNumber||'',description:r.extracted?.description||r.draftBill?.description||'Created from Incoming Documents verification',currency:r.extracted?.currency||r.draftBill?.currency||vendor.currency||'USD',branch:r.extracted?.branch||r.draftBill?.branch||'100',department:r.extracted?.department||r.draftBill?.department||'',taxTotal:Number(r.extracted?.taxAmount??r.draftBill?.taxTotal??0),freight:Number(r.extracted?.freightAmount??r.draftBill?.freight??0),amount:billAmount,balance:billAmount,lines:reviewedBillLines,matchedPoNumber:currentPo?.poNumber||'',id:incomingBillId,status:selectedDocumentType==='Prepayment'?'Pending Approval':'Saved',approvalStatus:selectedDocumentType==='Prepayment'?'Pending Payment Approval':NOT_SUBMITTED,billApprovalStatus:NOT_SUBMITTED,paymentApprovalStatus:selectedDocumentType==='Prepayment'?'Pending Payment Approval':'Not Required',unappliedBalance:selectedDocumentType==='Prepayment'?billAmount:0,appliedAmount:0,applications:Array.isArray(r.draftBill?.applications)?r.draftBill.applications:[],source:'Incoming Documents',incomingDocumentId:r.id,fileHash:r.fileHash,attachmentName:'',invoicePdfAttached:false,attachments:[],approvals:[],history:[]};
+ const incomingBillId=(selectedDocumentType==='Credit Adjustment'?'CM-AP':'BILL')+'-'+String(apDocuments.length+1001).padStart(4,'0');
+ const d={...r.draftBill,vendorId:vendor.id,vendorName:vendor.name,approverUserId,type:selectedDocumentType,date:billDate,postDate:billDate,postPeriod:periodFromDate(billDate),dueDate:r.extracted?.dueDate||r.draftBill?.dueDate||billDate,terms:r.extracted?.paymentTerms||r.extracted?.terms||r.draftBill?.terms||vendor.terms||'NET30',vendorRef:r.extracted?.invoiceNumber||r.draftBill?.vendorRef||'',invoiceNumber:r.extracted?.invoiceNumber||r.draftBill?.invoiceNumber||'',description:r.extracted?.description||r.draftBill?.description||'Created from Incoming Documents verification',currency:r.extracted?.currency||r.draftBill?.currency||vendor.currency||'USD',branch:r.extracted?.branch||r.draftBill?.branch||'100',department:r.extracted?.department||r.draftBill?.department||'',taxTotal:Number(r.extracted?.taxAmount??r.draftBill?.taxTotal??0),freight:Number(r.extracted?.freightAmount??r.draftBill?.freight??0),amount:billAmount,balance:billAmount,lines:reviewedBillLines,matchedPoNumber:currentPo?.poNumber||'',id:incomingBillId,status:'Saved',approvalStatus:NOT_SUBMITTED,billApprovalStatus:NOT_SUBMITTED,paymentApprovalStatus:'Not Required',unappliedBalance:0,appliedAmount:0,applications:[],source:'Incoming Documents',incomingDocumentId:r.id,fileHash:r.fileHash,attachmentName:'',invoicePdfAttached:false,attachments:[],approvals:[],history:[]};
  if(selectedDocumentType==='Bill'){const incomingMatch=evaluatePoThreeWayMatch(d);d.matchStatus=incomingMatch.status;d.threeWayMatchStatus=incomingMatch.status;}else{d.matchStatus='Not Applicable';d.threeWayMatchStatus='Not Applicable';}
  apDocuments.push(d);`;
 
@@ -56,7 +56,7 @@ export function applyApIncomingConversionPatch(source){
   );
   const start=" const vendor=vendors.find(v=>v.id===(r.vendorMatch?.vendorId||r.draftBill?.vendorId)),approverUserId=transactionApproverId({overrideUserId:r.approverUserId,vendor}); const d=";
   const end=" apDocuments.push(d);";
-  return replaceRange(source,start,end,conversionBlock,'reviewed incoming AP Bill rebuild');
+  return replaceRange(source,start,end,conversionBlock,'reviewed incoming AP document rebuild');
 }
 
 export async function prepareApIncomingConversionServer(inputModule='./server.js'){

@@ -1,29 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { applyApPaymentNoApprovalPatch } from '../src/apPaymentNoApprovalPatch.js';
 
-test('normal AP payments skip approval while prepayments use the dedicated approval path', () => {
-  const source = `function syncApPaymentReview(doc){
-  if(!doc||!['Payment','Prepayment'].includes(doc.type)) return doc;
-  const applied=(doc.applications||[]).reduce((t,a)=>t+Number(a.amount||a.amountPaid||0),0);
-  doc.appliedAmount=applied;
-  doc.unappliedBalance=Math.max(0,Number(doc.amount||0)-applied);
-  doc.balance=doc.unappliedBalance;
-  if(!doc.paymentApprovalStatus) doc.paymentApprovalStatus=doc.type==='Prepayment'?'Pending Payment Approval':(Number(doc.amount||0)>=Number(apApprovalThresholds.paymentControllerThreshold||25000)?'Pending Payment Approval':'Not Required');
-  return doc;
-}
-function approvePayment(doc,{userId='admin',comments=''}={}){
-  const old=doc.paymentApprovalStatus||'Pending Payment Approval';
-  doc.paymentApprovalStatus='Approved For Payment'; if(doc.type==='Prepayment') doc.status='Approved';
-  return doc;
-}
-if(action==='approve')approveBill(d,b);else if(action==='reject')rejectBill(d,b);
-if(['Payment','Prepayment'].includes(doc.type)){syncApPaymentReview(doc);const payStatus=doc.paymentApprovalStatus||'Not Required';if(payStatus==='Pending Payment Approval')throw apPostingBusinessError('Payment batch requires payment approval before posting.');}`;
-
-  const patched = applyApPaymentNoApprovalPatch(source);
+test('AP payment patch supports normal payments, PO prepayments, cash payments, and deposit-funded receipts', async () => {
+  const base = await readFile(new URL('../src/server.js', import.meta.url), 'utf8');
+  const patched = applyApPaymentNoApprovalPatch(base);
   assert.match(patched, /doc\.type==='Payment'\) doc\.paymentApprovalStatus='Not Required'/);
-  assert.doesNotMatch(patched, /paymentControllerThreshold/);
-  assert.match(patched, /if\(d\.type==='Prepayment'\)approvePayment\(d,b\);else approveBill\(d,b\)/);
-  assert.match(patched, /doc\.status='Approved';doc\.approvalStatus='Approved For Payment'/);
-  assert.match(patched, /Payment batch requires payment approval before posting/);
+  assert.match(patched, /doc\.type==='Cash Payment'/);
+  assert.match(patched, /Cash payment GL account/);
+  assert.match(patched, /syncPostedPrepaymentToPo/);
+  assert.match(patched, /sourceApDocumentId/);
+  assert.match(patched, /Select an open Purchase Order for this vendor prepayment/);
+  assert.match(patched, /remainingVendorDeposit/);
+  assert.match(patched, /POSTING_ACCOUNTS\.vendorDeposit,credit:depositApplied/);
+  assert.match(patched, /receiptDepositApplied/);
+  assert.match(patched, /b\.type==='Cash Payment'\?'CASH-AP'/);
+  const tmp = await mkdtemp(path.join(os.tmpdir(), 'erp-ap-payment-types-'));
+  const target = path.join(tmp, 'server.mjs');
+  try {
+    await writeFile(target, patched, 'utf8');
+    execFileSync(process.execPath, ['--check', target], { stdio:'pipe' });
+  } finally {
+    await rm(tmp, { recursive:true, force:true });
+  }
 });

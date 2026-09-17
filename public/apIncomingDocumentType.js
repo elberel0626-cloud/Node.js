@@ -2,7 +2,7 @@
   'use strict';
 
   const reviewRoute = () => location.pathname.match(/^\/ap\/incoming-documents\/([^/]+)\/review$/);
-  const allowedTypes = new Set(['Bill', 'Prepayment']);
+  const allowedTypes = new Set(['Bill', 'Credit Adjustment']);
   const documentPromises = new Map();
 
   async function request(url) {
@@ -34,14 +34,12 @@
     button.disabled = false;
     button.dataset.incomingConverted = '';
     const type = currentSelection();
-    button.textContent = type === 'Prepayment' ? 'Create AP Prepayment' : 'Create AP Bill';
-    button.title = type === 'Prepayment' ? 'Create an AP Prepayment from this reviewed document.' : 'Create an AP Bill from this reviewed document.';
+    button.textContent = type === 'Credit Adjustment' ? 'Create AP Credit Memo' : 'Create AP Bill';
+    button.title = type === 'Credit Adjustment' ? 'Create an AP Credit Memo from this reviewed document.' : 'Create an AP Bill from this reviewed document.';
   }
 
   function getIncomingDocument(documentId) {
-    if (!documentPromises.has(documentId)) {
-      documentPromises.set(documentId, request(`/api/ap/incoming-documents/${encodeURIComponent(documentId)}`));
-    }
+    if (!documentPromises.has(documentId)) documentPromises.set(documentId, request(`/api/ap/incoming-documents/${encodeURIComponent(documentId)}`));
     return documentPromises.get(documentId);
   }
 
@@ -57,7 +55,7 @@
     if (!label) {
       label = document.createElement('label');
       label.dataset.incomingDocumentType = '1';
-      label.innerHTML = "AP Document Type<select id='reviewApDocumentType'><option value='Bill'>Bill</option><option value='Prepayment'>Prepayment</option></select><small>Select what this reviewed incoming document will create in AP.</small>";
+      label.innerHTML = "AP Document Type<select id='reviewApDocumentType'><option value='Bill'>Bill</option><option value='Credit Adjustment'>Credit Memo</option></select><small>Select whether this incoming document creates an AP Bill or AP Credit Memo.</small>";
       grid.insertBefore(label, grid.firstChild);
       const select = label.querySelector('#reviewApDocumentType');
       select.addEventListener('change', () => {
@@ -93,8 +91,7 @@
       const url = String(input instanceof Request ? input.url : input || '');
       if (route && method === 'PUT' && url.includes(`/api/ap/incoming-documents/${encodeURIComponent(decodeURIComponent(route[1]))}`) && typeof options.body === 'string') {
         const payload = JSON.parse(options.body);
-        const selectedType = currentSelection();
-        payload.draftBill = { ...(payload.draftBill || {}), type: selectedType };
+        payload.draftBill = { ...(payload.draftBill || {}), type: currentSelection() };
         options = { ...options, body: JSON.stringify(payload) };
       }
     } catch (error) {
@@ -120,7 +117,6 @@
         event.preventDefault();
         event.stopImmediatePropagation();
         updateCreateButton(incoming);
-        return;
       }
     } catch (error) {
       console.error('Unable to verify incoming document conversion state', error);
@@ -131,10 +127,7 @@
   const schedule = () => {
     if (queued) return;
     queued = true;
-    queueMicrotask(() => {
-      queued = false;
-      enhanceDocumentTypeSelector();
-    });
+    queueMicrotask(() => { queued = false; enhanceDocumentTypeSelector(); });
   };
 
   window.addEventListener('popstate', schedule);
