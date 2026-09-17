@@ -15,21 +15,12 @@ function replaceOnce(source, oldText, newText, label) {
 }
 
 export function applyApPaymentNoApprovalPatch(source) {
-  source = replaceOnce(
+  return replaceOnce(
     source,
     "if(!doc.paymentApprovalStatus) doc.paymentApprovalStatus=doc.type==='Prepayment'?'Pending Payment Approval':(Number(doc.amount||0)>=Number(apApprovalThresholds.paymentControllerThreshold||25000)?'Pending Payment Approval':'Not Required');",
     "if(doc.type==='Payment') doc.paymentApprovalStatus='Not Required'; else if(!doc.paymentApprovalStatus) doc.paymentApprovalStatus='Pending Payment Approval';",
     'normal AP payments do not require payment approval'
   );
-
-  source = replaceOnce(
-    source,
-    "if(['Payment','Prepayment'].includes(doc.type)){syncApPaymentReview(doc);const payStatus=doc.paymentApprovalStatus||'Not Required';if(payStatus==='Pending Payment Approval')throw apPostingBusinessError('Payment batch requires payment approval before posting.');}",
-    "if(['Payment','Prepayment'].includes(doc.type)){syncApPaymentReview(doc);if(doc.type==='Prepayment'){const payStatus=doc.paymentApprovalStatus||'Pending Payment Approval';if(payStatus==='Pending Payment Approval')throw apPostingBusinessError('Vendor prepayment requires payment approval before posting.');}}",
-    'posting approval gate applies only to vendor prepayments'
-  );
-
-  return source;
 }
 
 export async function prepareApPaymentNoApprovalServer(inputModule = './server.js') {
