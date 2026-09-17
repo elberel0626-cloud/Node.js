@@ -7,29 +7,6 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const money = value => Number(value || 0).toLocaleString(undefined, { style:'currency', currency:'USD' });
 
-  // rgaWorkflow.js is loaded immediately after this file. Its MutationObserver
-  // should continue working on Sales/AR RGA screens, but it must stay dormant
-  // while Inventory owns the customer-return receipt screen. Wrapping the first
-  // observer created after this guard isolates that legacy observer without
-  // interfering with Inventory V2's own observers that already exist.
-  const NativeMutationObserver = window.MutationObserver;
-  let guardedObserverSequence = 0;
-  class RgaRouteAwareMutationObserver extends NativeMutationObserver {
-    constructor(callback) {
-      const sequence = ++guardedObserverSequence;
-      super((records, observer) => {
-        if (sequence === 1 && location.pathname === INVENTORY_RETURNS) return;
-        callback(records, observer);
-      });
-    }
-  }
-  window.MutationObserver = RgaRouteAwareMutationObserver;
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-      if (window.MutationObserver === RgaRouteAwareMutationObserver) window.MutationObserver = NativeMutationObserver;
-    }, 50);
-  }, { once:true });
-
   async function api(path) {
     const response = await fetch(path, { credentials:'same-origin' });
     const text = await response.text();
@@ -84,6 +61,7 @@
     const view = document.getElementById('view');
     const title = document.getElementById('title');
     if (!view) return;
+
     inventoryRenderInFlight = true;
     ensureInventoryReturnLink();
     syncActiveNavigation(INVENTORY_RETURNS);
@@ -121,7 +99,8 @@
       view.dataset.inventoryCustomerReturnsPath = INVENTORY_RETURNS;
       const refresh = document.getElementById('inventoryRgaRefresh');
       if (refresh) refresh.onclick = () => {
-        view.querySelector('[data-inventory-customer-returns]')?.remove();
+        view.removeAttribute('data-inventory-customer-returns-path');
+        view.querySelector('[data-inventory-customer-returns="1"]')?.remove();
         renderInventoryReturns();
       };
     } catch (error) {
@@ -187,13 +166,8 @@
       else wakeRgaRenderer(true);
     }
 
-    // Start this after rgaWorkflow.js has created its guarded observer and the
-    // global MutationObserver constructor has been restored. This observer is
-    // idempotent: it repairs only a missing sidebar link or a missing return view.
-    setTimeout(() => {
-      const repairObserver = new NativeMutationObserver(repairInventoryReturnRoute);
-      if (document.body) repairObserver.observe(document.body, { childList:true, subtree:true });
-      repairInventoryReturnRoute();
-    }, 75);
+    const repairObserver = new MutationObserver(repairInventoryReturnRoute);
+    if (document.body) repairObserver.observe(document.body, { childList:true, subtree:true });
+    repairInventoryReturnRoute();
   });
 })();
