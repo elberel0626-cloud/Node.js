@@ -9,7 +9,7 @@ import { applyPurchaseOrderPreferencesPatch } from '../src/purchaseOrderPreferen
 import { applyPurchaseOrderReportingPatch } from '../src/purchaseOrderReportingPatch.js';
 import { applyApIncomingConversionPatch } from '../src/apIncomingConversionPatch.js';
 
-test('reviewed incoming invoice converts exactly the reviewed AP bill lines and remains valid with full PO runtime', async () => {
+test('reviewed incoming invoice creates the selected AP document type from the reviewed lines and blocks duplicate conversion', async () => {
   const base=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   const incoming=applyIncomingPurchaseOrderWorkflowPatch(base);
   const preferences=applyPurchaseOrderPreferencesPatch(incoming);
@@ -18,10 +18,14 @@ test('reviewed incoming invoice converts exactly the reviewed AP bill lines and 
   assert.match(patched,/reviewedBillLines/);
   assert.match(patched,/reviewedSourceLines=Array\.isArray\(r\.extracted\?\.lines\)\?r\.extracted\.lines/);
   assert.doesNotMatch(patched,/r\.extracted\?\.lines\)&&r\.extracted\.lines\.length\?r\.extracted\.lines/);
+  assert.match(patched,/selectedDocumentType=\['Bill','Prepayment'\]\.includes\(r\.draftBill\?\.type\)/);
+  assert.match(patched,/selectedDocumentType==='Prepayment'\?'PREPAY':'BILL'/);
+  assert.match(patched,/type:selectedDocumentType/);
+  assert.match(patched,/paymentApprovalStatus:selectedDocumentType==='Prepayment'\?'Pending Payment Approval':'Not Required'/);
+  assert.match(patched,/already been converted to an AP document and cannot create another one/);
   assert.match(patched,/poLineId:poLine\?\.id/);
   assert.match(patched,/matchedPoNumber:currentPo\?\.poNumber/);
-  assert.match(patched,/evaluatePoThreeWayMatch\(d\)/);
-  assert.match(patched,/status:'Saved'/);
+  assert.match(patched,/selectedDocumentType==='Bill'\)\{const incomingMatch=evaluatePoThreeWayMatch\(d\)/);
   const tmp=await mkdtemp(path.join(os.tmpdir(),'erp-ap-incoming-conversion-'));
   const target=path.join(tmp,'server.mjs');
   try {
