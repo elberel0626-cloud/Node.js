@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const RGA_PATHS = ['/sales-orders/rga', '/ar/rga', '/inventory/customer-returns'];
+  const RGA_PATHS = ['/sales-orders/rga', '/ar/rga'];
   const $ = (selector, root = document) => root.querySelector(selector);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const money = value => Number(value || 0).toLocaleString(undefined, { style:'currency', currency:'USD' });
@@ -99,7 +99,7 @@
         <div class='rga-kpi'>Returned Credit<b>${money(rows.reduce((sum,r)=>sum+Number(r.totalCredit||0),0))}</b></div>
       </div>
       <section class='rga-section rga-table-wrap'><table class='rga-table'><thead><tr><th>RGA</th><th>Status</th><th>Customer</th><th>Original Invoice</th><th>Invoice Status</th><th>Invoice Balance</th><th>Authorized Qty</th><th>Received Qty</th><th>Credit Amount</th><th>Credit Memo</th><th>Reason</th></tr></thead><tbody>
-      ${rows.map(row=>`<tr><td><a href='/sales-orders/rga/${encodeURIComponent(row.id)}'>${esc(row.id)}</a></td><td>${statusBadge(row.status)}</td><td>${esc(row.customerName)}</td><td><a href='/ar/doc/${encodeURIComponent(row.invoiceId)}'>${esc(row.invoiceId)}</a></td><td>${esc(row.invoice?.status||'')}</td><td>${money(row.invoice?.balance||0)}</td><td>${Number(row.authorizedQty||0)}</td><td>${Number(row.receivedQty||0)}</td><td>${money(row.totalCredit||0)}</td><td>${row.creditMemo?.id?`<a href='/ar/doc/${encodeURIComponent(row.creditMemo.id)}'>${esc(row.creditMemo.id)}</a>`:''}</td><td>${esc(row.reason||'')}</td></tr>`).join('') || `<tr><td colspan='11'>No RGA transactions yet.</td></tr>`}
+      ${rows.map(row=>`<tr><td><a href='/sales-orders/rga/${encodeURIComponent(row.id)}'>${esc(row.id)}</a></td><td>${statusBadge(row.status)}</td><td>${esc(row.customerName)}</td><td><a href='/ar/doc/${encodeURIComponent(row.invoiceId)}'>${esc(row.invoiceId)}</a></td><td>${esc(row.invoice?.status||'')}</td><td>${money(row.invoice?.balance||0)}</td><td>${Number(row.authorizedQty||0)}</td><td>${Number(row.receivedQty||0)}</td><td>${money(row.totalCredit||0)}</td><td>${row.creditMemo?.id?`<a href='/ar/doc/${encodeURIComponent(row.creditMemo.id)}'>${esc(row.creditMemo.id)} — ${esc(row.creditMemo.status)} — ${money(row.creditMemo.balance)} open credit</a>`:''}</td><td>${esc(row.reason||'')}</td></tr>`).join('') || `<tr><td colspan='11'>No RGA transactions yet.</td></tr>`}
       </tbody></table></section>
     </div>`;
     $('#rgaNew').onclick = () => navigate('/sales-orders/rga/new');
