@@ -20,7 +20,7 @@ const conversionBlock=String.raw` const vendor=selectedIncomingVendor||vendors.f
  const currentPoNumber=String(r.extracted?.purchaseOrderNumber||r.extracted?.poNumber||r.poMatch?.poNumber||(r.draftBill?.lines||[]).find(line=>line.poNumber)?.poNumber||'').trim();
  const currentPo=currentPoNumber?purchaseOrders.find(po=>(po.poNumber===currentPoNumber||po.id===currentPoNumber)&&po.vendorId===vendor.id):null;
  const currentPoLines=currentPo?purchaseOrderLines.filter(line=>line.poId===currentPo.id):[];
- const reviewedSourceLines=(Array.isArray(r.extracted?.lines)&&r.extracted.lines.length?r.extracted.lines:Array.isArray(r.draftBill?.lines)?r.draftBill.lines:[]);
+ const reviewedSourceLines=Array.isArray(r.extracted?.lines)?r.extracted.lines:(Array.isArray(r.draftBill?.lines)?r.draftBill.lines:[]);
  const reviewedBillLines=reviewedSourceLines.map((line,index)=>{
    const inventoryId=String(line.inventoryId||line.itemCode||'').trim();
    const poLine=currentPoLines.find(candidate=>String(candidate.id)===String(line.poLineId||''))||currentPoLines.find(candidate=>String(candidate.lineNumber)===String(line.poLineNumber||''))||currentPoLines.find(candidate=>inventoryId&&candidate.inventoryId===inventoryId)||currentPoLines[index]||null;

@@ -14,13 +14,32 @@ function replaceOnce(source, oldText, newText, label) {
   return source.slice(0, first) + newText + source.slice(first + oldText.length);
 }
 
+function replaceIfPresent(source, oldText, newText) {
+  if (source.includes(newText) || !source.includes(oldText)) return source;
+  return source.replace(oldText, newText);
+}
+
 export function applyApPaymentNoApprovalPatch(source) {
-  return replaceOnce(
+  source = replaceOnce(
     source,
     "if(!doc.paymentApprovalStatus) doc.paymentApprovalStatus=doc.type==='Prepayment'?'Pending Payment Approval':(Number(doc.amount||0)>=Number(apApprovalThresholds.paymentControllerThreshold||25000)?'Pending Payment Approval':'Not Required');",
     "if(doc.type==='Payment') doc.paymentApprovalStatus='Not Required'; else if(!doc.paymentApprovalStatus) doc.paymentApprovalStatus='Pending Payment Approval';",
     'normal AP payments do not require payment approval'
   );
+
+  source = replaceIfPresent(
+    source,
+    "if(action==='approve')approveBill(d,b);else if(action==='reject')rejectBill(d,b);",
+    "if(action==='approve'){if(d.type==='Prepayment')approvePayment(d,b);else approveBill(d,b);}else if(action==='reject')rejectBill(d,b);"
+  );
+
+  source = replaceIfPresent(
+    source,
+    "doc.paymentApprovalStatus='Approved For Payment'; if(doc.type==='Prepayment') doc.status='Approved';",
+    "doc.paymentApprovalStatus='Approved For Payment'; if(doc.type==='Prepayment'){doc.status='Approved';doc.approvalStatus='Approved For Payment';}"
+  );
+
+  return source;
 }
 
 export async function prepareApPaymentNoApprovalServer(inputModule = './server.js') {

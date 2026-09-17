@@ -9,13 +9,15 @@ import { applyPurchaseOrderPreferencesPatch } from '../src/purchaseOrderPreferen
 import { applyPurchaseOrderReportingPatch } from '../src/purchaseOrderReportingPatch.js';
 import { applyApIncomingConversionPatch } from '../src/apIncomingConversionPatch.js';
 
-test('reviewed incoming invoice converts to current AP bill lines and remains valid with full PO runtime', async () => {
+test('reviewed incoming invoice converts exactly the reviewed AP bill lines and remains valid with full PO runtime', async () => {
   const base=await readFile(new URL('../src/server.js',import.meta.url),'utf8');
   const incoming=applyIncomingPurchaseOrderWorkflowPatch(base);
   const preferences=applyPurchaseOrderPreferencesPatch(incoming);
   const reporting=applyPurchaseOrderReportingPatch(preferences);
   const patched=applyApIncomingConversionPatch(reporting);
   assert.match(patched,/reviewedBillLines/);
+  assert.match(patched,/reviewedSourceLines=Array\.isArray\(r\.extracted\?\.lines\)\?r\.extracted\.lines/);
+  assert.doesNotMatch(patched,/r\.extracted\?\.lines\)&&r\.extracted\.lines\.length\?r\.extracted\.lines/);
   assert.match(patched,/poLineId:poLine\?\.id/);
   assert.match(patched,/matchedPoNumber:currentPo\?\.poNumber/);
   assert.match(patched,/evaluatePoThreeWayMatch\(d\)/);
