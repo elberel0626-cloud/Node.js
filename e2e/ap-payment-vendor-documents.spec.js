@@ -28,25 +28,26 @@ async function createPostedBill(page, amount) {
   return bill.body;
 }
 
-test('selected AP bills auto-fill applied amounts, calculate payment total, save, and post', async ({ page }) => {
+test('Pay Bill opens a preselected payment and checked bills drive applied and payment totals', async ({ page }) => {
   await openView(page, '/ap/bills', '#apBillGrid');
   const firstBill = await createPostedBill(page, 48.75);
   const secondBill = await createPostedBill(page, 21.25);
 
-  await openView(page, '/ap/payments/new', '#pVendorNumber');
-  await expect(page.locator("label:has(#pBranch)")).toBeHidden();
-  await page.locator('#pVendorNumber').fill('');
-  await page.locator('#pVendorNumber').click();
-  await expect(page.locator('.party-suggestions .erp-lookup-row').first()).toBeVisible();
-  await page.locator('#pVendorNumber').fill('VEND-1001');
-  await page.locator('.party-suggestions .erp-lookup-row').first().click();
+  await openView(page, `/ap/bills/${firstBill.id}`, '#bActions');
+  await expect(page.locator("#bActions option[value='pay-bill']")).toHaveCount(1);
+  await page.locator('#bActions').selectOption('pay-bill');
 
-  await expect(page.locator(`.amtPaid[data-id='${firstBill.id}']`)).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/ap/payments/new\\?billId=${firstBill.id}`));
+  await expect(page.locator('#pVendorNumber')).toHaveValue('VEND-1001');
+  await expect(page.locator(`.pickDoc[data-id='${firstBill.id}']`)).toBeChecked();
+  await expect(page.locator(`.amtPaid[data-id='${firstBill.id}']`)).toHaveValue('48.75');
+  await expect(page.locator('#pAmount')).toHaveValue('48.75');
+  await expect(page.locator('#pApplied')).toHaveValue('48.75');
+  await expect(page.locator('#pUnap')).toHaveValue('0.00');
+
   await expect(page.locator(`.amtPaid[data-id='${secondBill.id}']`)).toBeVisible();
-  await page.locator(`.pickDoc[data-id='${firstBill.id}']`).check();
   await page.locator(`.pickDoc[data-id='${secondBill.id}']`).check();
 
-  await expect(page.locator(`.amtPaid[data-id='${firstBill.id}']`)).toHaveValue('48.75');
   await expect(page.locator(`.amtPaid[data-id='${secondBill.id}']`)).toHaveValue('21.25');
   await expect(page.locator('#pAmount')).toHaveValue('70.00');
   await expect(page.locator('#pApplied')).toHaveValue('70.00');
