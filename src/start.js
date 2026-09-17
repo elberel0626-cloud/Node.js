@@ -14,6 +14,7 @@ import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.j
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
 import { prepareArPaymentGlApplicationsServer } from './arPaymentGlApplicationsPatch.js';
 import { prepareArPaymentApplicationConsistencyServer } from './arPaymentApplicationConsistencyPatch.js';
+import { prepareRgaWorkflowServer } from './rgaWorkflowPatch.js';
 import { prepareFinancialReportMappingServer } from './financialReportMappingPatch.js';
 import { patchApBillsGridFile } from './apBillsGridPatch.js';
 
@@ -45,7 +46,8 @@ const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer
 const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apRuntimeReliabilityServerModule);
 const arPaymentGlApplicationsServerModule = await prepareArPaymentGlApplicationsServer(arProfessionalDocumentsServerModule);
 const arPaymentApplicationConsistencyServerModule = await prepareArPaymentApplicationConsistencyServer(arPaymentGlApplicationsServerModule);
-const financialReportMappingServerModule = await prepareFinancialReportMappingServer(arPaymentApplicationConsistencyServerModule);
+const rgaWorkflowServerModule = await prepareRgaWorkflowServer(arPaymentApplicationConsistencyServerModule);
+const financialReportMappingServerModule = await prepareFinancialReportMappingServer(rgaWorkflowServerModule);
 const financialReportMappingServerUrl = new URL(financialReportMappingServerModule, import.meta.url);
 execFileSync(process.execPath, ['--check', fileURLToPath(financialReportMappingServerUrl)], { stdio: 'inherit' });
 await import(financialReportMappingServerModule);
