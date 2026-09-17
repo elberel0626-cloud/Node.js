@@ -7,6 +7,29 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const money = value => Number(value || 0).toLocaleString(undefined, { style:'currency', currency:'USD' });
 
+  // rgaWorkflow.js is loaded immediately after this file. Its MutationObserver
+  // should continue working on Sales/AR RGA screens, but it must stay dormant
+  // while Inventory owns the customer-return receipt screen. Wrapping the first
+  // observer created after this guard isolates that legacy observer without
+  // interfering with Inventory V2's own observer.
+  const NativeMutationObserver = window.MutationObserver;
+  let guardedObserverSequence = 0;
+  class RgaRouteAwareMutationObserver extends NativeMutationObserver {
+    constructor(callback) {
+      const sequence = ++guardedObserverSequence;
+      super((records, observer) => {
+        if (sequence === 1 && location.pathname === INVENTORY_RETURNS) return;
+        callback(records, observer);
+      });
+    }
+  }
+  window.MutationObserver = RgaRouteAwareMutationObserver;
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      if (window.MutationObserver === RgaRouteAwareMutationObserver) window.MutationObserver = NativeMutationObserver;
+    }, 50);
+  }, { once:true });
+
   async function api(path) {
     const response = await fetch(path, { credentials:'same-origin' });
     const text = await response.text();
@@ -131,7 +154,15 @@
     ensureInventoryReturnLink();
     if (!isRgaPath(location.pathname)) return;
     syncActiveNavigation(location.pathname);
-    if (location.pathname === INVENTORY_RETURNS) renderInventoryReturns();
-    else wakeRgaRenderer(true);
+    if (location.pathname === INVENTORY_RETURNS) {
+      renderInventoryReturns();
+      // The legacy workflow schedules one startup render before its observer is
+      // fully suppressed. Reassert Inventory ownership once after that timer.
+      setTimeout(() => {
+        if (location.pathname === INVENTORY_RETURNS) renderInventoryReturns();
+      }, 40);
+    } else {
+      wakeRgaRenderer(true);
+    }
   });
 })();
