@@ -29,6 +29,45 @@ function proportionalTax(line, qty) {
   return roundMoney(number(line.tax || 0) * (number(qty) / invoicedQty));
 }
 
+function invoiceLineNetAmount(line) {
+  const qty = Math.max(0, number(line.qty || line.quantity));
+  const extended = qty * number(line.unitPrice);
+  return Math.max(0, extended - (extended * number(line.discountPct) / 100));
+}
+
+function allocateInvoiceTax(invoice, invoiceLines) {
+  const explicitTaxes = invoiceLines.map(line => roundMoney(number(line.tax)));
+  const explicitTotal = roundMoney(explicitTaxes.reduce((sum, tax) => sum + tax, 0));
+  const headerTax = roundMoney(number(invoice.taxTotal));
+  const remainingHeaderTax = Math.max(0, roundMoney(headerTax - explicitTotal));
+
+  if (remainingHeaderTax <= 0) return explicitTaxes;
+
+  const taxableIndexes = invoiceLines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => line.taxable !== false && invoiceLineNetAmount(line) > 0)
+    .map(({ index }) => index);
+
+  if (!taxableIndexes.length) return explicitTaxes;
+
+  const taxableBase = taxableIndexes.reduce((sum, index) => sum + invoiceLineNetAmount(invoiceLines[index]), 0);
+  if (taxableBase <= 0) return explicitTaxes;
+
+  let allocatedSoFar = 0;
+  taxableIndexes.forEach((index, position) => {
+    let allocation;
+    if (position === taxableIndexes.length - 1) {
+      allocation = roundMoney(remainingHeaderTax - allocatedSoFar);
+    } else {
+      allocation = roundMoney(remainingHeaderTax * (invoiceLineNetAmount(invoiceLines[index]) / taxableBase));
+      allocatedSoFar = roundMoney(allocatedSoFar + allocation);
+    }
+    explicitTaxes[index] = roundMoney(explicitTaxes[index] + allocation);
+  });
+
+  return explicitTaxes;
+}
+
 export function rgaLineCreditAmount(line) {
   const qty = Math.max(0, number(line.returnQty));
   const unitPrice = number(line.unitPrice);
@@ -59,11 +98,13 @@ export function calculateRgaTotals(lines = []) {
 export function buildRgaLinesFromInvoice(invoice, committedByLine = {}) {
   if (!invoice || invoice.type !== 'Invoice') throw new Error('RGA requires an original customer invoice.');
   const invoiceLines = Array.isArray(invoice.lines) ? invoice.lines : [];
+  const allocatedTaxes = allocateInvoiceTax(invoice, invoiceLines);
   return invoiceLines.map((line, index) => {
     const invoiceQty = Math.max(0, number(line.qty || line.quantity));
     const committed = Math.max(0, number(committedByLine[index]));
     const available = Math.max(0, invoiceQty - committed);
-    const taxPerUnit = invoiceQty ? roundMoney(number(line.tax || 0) / invoiceQty) : 0;
+    const originalLineTax = roundMoney(allocatedTaxes[index] || 0);
+    const taxPerUnit = invoiceQty ? roundMoney(originalLineTax / invoiceQty) : 0;
     return {
       lineId: `RGAL-${index + 1}`,
       invoiceLineIndex: index,
@@ -77,7 +118,8 @@ export function buildRgaLinesFromInvoice(invoice, committedByLine = {}) {
       receivedQty: 0,
       unitPrice: number(line.unitPrice),
       discountPct: number(line.discountPct),
-      taxable: !!line.taxable,
+      taxable: line.taxable !== false && originalLineTax > 0,
+      originalLineTax,
       taxPerUnit,
       taxAmount: 0,
       creditAmount: 0,
@@ -94,7 +136,7 @@ export function mergeRequestedRgaLines(baseLines = [], requestedLines = []) {
   return baseLines.map(line => {
     const req = requested.get(Number(line.invoiceLineIndex)) || {};
     const returnQty = Math.max(0, number(req.returnQty));
-    const taxAmount = proportionalTax({ qty: line.invoiceQty, tax: number(line.taxPerUnit) * line.invoiceQty }, returnQty);
+    const taxAmount = proportionalTax({ qty: line.invoiceQty, tax: number(line.originalLineTax ?? number(line.taxPerUnit) * line.invoiceQty) }, returnQty);
     const merged = {
       ...line,
       returnQty,
