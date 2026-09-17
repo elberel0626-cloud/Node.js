@@ -11,7 +11,7 @@
   // should continue working on Sales/AR RGA screens, but it must stay dormant
   // while Inventory owns the customer-return receipt screen. Wrapping the first
   // observer created after this guard isolates that legacy observer without
-  // interfering with Inventory V2's own observer.
+  // interfering with Inventory V2's own observers that already exist.
   const NativeMutationObserver = window.MutationObserver;
   let guardedObserverSequence = 0;
   class RgaRouteAwareMutationObserver extends NativeMutationObserver {
@@ -62,21 +62,29 @@
 
   function ensureInventoryReturnLink() {
     const nav = document.getElementById('ar-nav');
-    if (!nav || nav.querySelector(`a[href='${INVENTORY_RETURNS}']`)) return;
+    if (!nav) return false;
+    const existing = nav.querySelector(`a[href='${INVENTORY_RETURNS}']`);
+    if (existing) {
+      existing.classList.toggle('active', location.pathname === INVENTORY_RETURNS);
+      return true;
+    }
     const receipts = nav.querySelector("a[href='/inventory/receipts']");
-    if (!receipts) return;
+    if (!receipts) return false;
     const link = document.createElement('a');
     link.href = INVENTORY_RETURNS;
     link.textContent = 'Customer Return Receipts';
     link.classList.toggle('active', location.pathname === INVENTORY_RETURNS);
     receipts.insertAdjacentElement('afterend', link);
+    return true;
   }
 
+  let inventoryRenderInFlight = false;
   async function renderInventoryReturns() {
-    if (location.pathname !== INVENTORY_RETURNS) return;
+    if (location.pathname !== INVENTORY_RETURNS || inventoryRenderInFlight) return;
     const view = document.getElementById('view');
     const title = document.getElementById('title');
     if (!view) return;
+    inventoryRenderInFlight = true;
     ensureInventoryReturnLink();
     syncActiveNavigation(INVENTORY_RETURNS);
     if (title) title.textContent = 'Customer Return Receipts';
@@ -110,13 +118,19 @@
           </tbody></table>
         </section>
       </div>`;
+      view.dataset.inventoryCustomerReturnsPath = INVENTORY_RETURNS;
       const refresh = document.getElementById('inventoryRgaRefresh');
-      if (refresh) refresh.onclick = renderInventoryReturns;
+      if (refresh) refresh.onclick = () => {
+        view.querySelector('[data-inventory-customer-returns]')?.remove();
+        renderInventoryReturns();
+      };
     } catch (error) {
       if (location.pathname !== INVENTORY_RETURNS) return;
       view.innerHTML = `<div data-rga-root data-inventory-customer-returns='1' class='rga-note rga-error'><b>Unable to load customer return receipts.</b><br>${esc(error.message)}<br><button type='button' id='inventoryRgaRetry'>Retry</button></div>`;
       const retry = document.getElementById('inventoryRgaRetry');
       if (retry) retry.onclick = renderInventoryReturns;
+    } finally {
+      inventoryRenderInFlight = false;
     }
   }
 
@@ -150,19 +164,36 @@
     else wakeRgaRenderer(true);
   }, true);
 
+  let repairTimer = 0;
+  function repairInventoryReturnRoute() {
+    if (location.pathname !== INVENTORY_RETURNS) return;
+    clearTimeout(repairTimer);
+    repairTimer = setTimeout(() => {
+      if (location.pathname !== INVENTORY_RETURNS) return;
+      ensureInventoryReturnLink();
+      syncActiveNavigation(INVENTORY_RETURNS);
+      const title = document.getElementById('title');
+      if (title && title.textContent !== 'Customer Return Receipts') title.textContent = 'Customer Return Receipts';
+      const view = document.getElementById('view');
+      if (view && !view.querySelector('[data-inventory-customer-returns="1"]')) renderInventoryReturns();
+    }, 25);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     ensureInventoryReturnLink();
-    if (!isRgaPath(location.pathname)) return;
-    syncActiveNavigation(location.pathname);
-    if (location.pathname === INVENTORY_RETURNS) {
-      renderInventoryReturns();
-      // The legacy workflow schedules one startup render before its observer is
-      // fully suppressed. Reassert Inventory ownership once after that timer.
-      setTimeout(() => {
-        if (location.pathname === INVENTORY_RETURNS) renderInventoryReturns();
-      }, 40);
-    } else {
-      wakeRgaRenderer(true);
+    if (isRgaPath(location.pathname)) {
+      syncActiveNavigation(location.pathname);
+      if (location.pathname === INVENTORY_RETURNS) renderInventoryReturns();
+      else wakeRgaRenderer(true);
     }
+
+    // Start this after rgaWorkflow.js has created its guarded observer and the
+    // global MutationObserver constructor has been restored. This observer is
+    // idempotent: it repairs only a missing sidebar link or a missing return view.
+    setTimeout(() => {
+      const repairObserver = new NativeMutationObserver(repairInventoryReturnRoute);
+      if (document.body) repairObserver.observe(document.body, { childList:true, subtree:true });
+      repairInventoryReturnRoute();
+    }, 75);
   });
 })();
