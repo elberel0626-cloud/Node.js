@@ -11,6 +11,7 @@ import { preparePurchaseOrderReportingServer } from './purchaseOrderReportingPat
 import { prepareApIncomingConversionServer } from './apIncomingConversionPatch.js';
 import { prepareIncomingReviewSaveServer } from './incomingReviewSavePatch.js';
 import { prepareApRuntimeReliabilityServer } from './apRuntimeReliabilityPatch.js';
+import { prepareApPaymentNoApprovalServer } from './apPaymentNoApprovalPatch.js';
 import { prepareArProfessionalDocumentsServer } from './arProfessionalDocumentsPatch.js';
 import { prepareArPaymentGlApplicationsServer } from './arPaymentGlApplicationsPatch.js';
 import { prepareArPaymentApplicationConsistencyServer } from './arPaymentApplicationConsistencyPatch.js';
@@ -44,7 +45,8 @@ const poReportingServerModule = await preparePurchaseOrderReportingServer(poPref
 const apIncomingConversionServerModule = await prepareApIncomingConversionServer(poReportingServerModule);
 const incomingReviewSaveServerModule = await prepareIncomingReviewSaveServer(apIncomingConversionServerModule);
 const apRuntimeReliabilityServerModule = await prepareApRuntimeReliabilityServer(incomingReviewSaveServerModule);
-const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apRuntimeReliabilityServerModule);
+const apPaymentNoApprovalServerModule = await prepareApPaymentNoApprovalServer(apRuntimeReliabilityServerModule);
+const arProfessionalDocumentsServerModule = await prepareArProfessionalDocumentsServer(apPaymentNoApprovalServerModule);
 const arPaymentGlApplicationsServerModule = await prepareArPaymentGlApplicationsServer(arProfessionalDocumentsServerModule);
 const arPaymentApplicationConsistencyServerModule = await prepareArPaymentApplicationConsistencyServer(arPaymentGlApplicationsServerModule);
 const rgaWorkflowServerModule = await prepareRgaWorkflowServer(arPaymentApplicationConsistencyServerModule);
